@@ -1,0 +1,86 @@
+# Gici board configurations
+stream:
+  streamers:
+  - streamer:
+      tag: str_gnss_rov
+      output_tags: [fmt_gnss_rov]
+      type: file
+      path: /ssd/bag_files/multi_sensor_june_26/downtown/hw_sync/rosbag2_2024_06_26-12_06_57/gnssraw.ubx
+#   - streamer:
+#       tag: str_gnss_ref
+#       output_tags: [fmt_gnss_ref]
+#       type: file
+#       path: /ssd/bag_files/multi_sensor_june_26/gnss_base_station/novatel_base.gps
+#   - streamer:
+#       tag: str_gnss_eph
+#       output_tags: [fmt_gnss_eph]
+#       type: file
+#       path: /ssd/bag_files/multi_sensor_june_26/gnss_base_station/novatel_base.gps
+  - streamer:
+      tag: str_gnss_eph_rov
+      output_tags: [fmt_gnss_eph_rov]
+      type: file
+      path: /ssd/bag_files/multi_sensor_june_26/downtown/hw_sync/rosbag2_2024_06_26-12_06_57/gnssraw.ubx
+  formators:
+  - formator:
+      io: input
+      tag: fmt_gnss_rov
+      type: gnss-raw
+      sub_type: ublox
+      start_time: 2024.06.26
+  - formator:
+      io: input
+      tag: fmt_gnss_eph_rov
+      type: gnss-raw
+      sub_type: ublox
+      start_time: 2024.06.26
+  - formator:
+      io: input
+      tag: fmt_gnss_ref
+      type: gnss-raw
+      sub_type: novatel
+      start_time: 2024.06.26
+#   - formator:
+#       io: input
+#       tag: fmt_gnss_eph
+#       type: gnss-raw
+#       sub_type: novatel
+#       start_time: 2024.06.26
+
+
+rosbags:
+- rosbag: 
+    tag: rosbag_gnss_rov
+    type: rosbag
+    input_tags: [fmt_gnss_rov]
+    path: /ssd/bag_files/multi_sensor_june_26/downtown/hw_sync/rosbag2_2024_06_26-12_06_57/gnss_rover.bag
+    topic_name: /gici/gnss_rover
+    format: gnss_raw
+    enable_observation: true
+- rosbag: 
+    tag: rosbag_gnss_eph_rov
+    type: rosbag
+    input_tags: [fmt_gnss_eph_rov]
+    path: /ssd/bag_files/multi_sensor_june_26/downtown/hw_sync/rosbag2_2024_06_26-12_06_57/rover_eph.bag
+    topic_name: /gici/rover_ephemeris
+    format: gnss_raw
+    enable_ephemeris: true
+    enable_ionosphere_parameter: true
+- rosbag: 
+    tag: rosbag_gnss_ref
+    type: rosbag
+    input_tags: [fmt_gnss_ref]
+    path: /ssd/bag_files/multi_sensor_june_26/gnss_base_station/gnss_reference.bag
+    topic_name: /gici/gnss_reference
+    format: gnss_raw
+    enable_observation: true
+    enable_antenna_position: true
+# - rosbag: 
+#     tag: rosbag_gnss_eph
+#     type: rosbag
+#     input_tags: [fmt_gnss_eph]
+#     path: /ssd/bag_files/multi_sensor_june_26/gnss_base_station/gnss_ephemeris.bag
+#     topic_name: /gici/gnss_ephemeris
+#     format: gnss_raw
+#     enable_ephemeris: true
+#     enable_ionosphere_parameter: true

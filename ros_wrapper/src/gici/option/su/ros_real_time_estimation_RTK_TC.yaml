@@ -16,10 +16,18 @@ stream:
         format: gnss_raw
         enable_observation: true
         enable_antenna_position: true
+    # - streamer:
+    #     tag: str_ros_gnss_eph
+    #     type: ros
+    #     topic_name: /gici/gnss_ephemeris
+    #     io: input
+    #     format: gnss_raw
+    #     enable_ephemeris: true
+    #     enable_ionosphere_parameter: true
     - streamer:
-        tag: str_ros_gnss_eph
+        tag: str_ros_gnss_rov_eph
         type: ros
-        topic_name: /gici/gnss_ephemeris
+        topic_name: /gici/rover_ephemeris
         io: input
         format: gnss_raw
         enable_ephemeris: true
@@ -33,14 +41,14 @@ stream:
     - streamer:
         tag: str_ros_imu
         type: ros
-        topic_name: /gici/imu_raw
+        topic_name: mcu_node/data_link/icm/data
         io: input
         format: imu
     - streamer:
         tag: str_tc_solution_file
         input_tags: [fmt_tc_solution_file]
         type: file
-        path: /ssd/bag_files/ion24/giciopen/1.1/bag/rtk_tc_solution.txt
+        path: /ssd/bag_files/multi_sensor_june_26/ccit_to_staples/hw_sync/rosbag2_2024_06_26-10_59_18/rtk_tc_solution.txt
         enable_time_tag: false
     - streamer:
         tag: str_solution
@@ -85,10 +93,11 @@ estimate:
 - estimator:
     tag: est_rtk_imu_tc
     type: rtk_imu_tc
-    input_tags: [str_ros_gnss_rov, str_ros_gnss_ref, str_ros_gnss_eph, fmt_dcb_file, str_ros_imu]
+    input_tags: [str_ros_gnss_rov, str_ros_gnss_ref, str_ros_gnss_eph, str_ros_gnss_rov_eph, fmt_dcb_file, str_ros_imu]
     str_ros_gnss_rov_roles: [rover]
     str_ros_gnss_ref_roles: [reference]
     str_ros_gnss_eph_roles: [ephemeris]
+    str_ros_gnss_rov_eph_roles: [ephemeris]
     fmt_dcb_file_roles: [code_bias]
     str_ros_imu_roles: [major]
     output_tags: [fmt_tc_solution_file, str_solution, str_solution_odometry, str_solution_path]
@@ -116,7 +125,7 @@ estimate:
         sigma_a_c: 0.0112
         sigma_gw_c: 2.0881e-06
         sigma_aw_c: 2.7361e-04
-      body_to_imu_rotation: [-90.0, -90.0, 0.0]
+      body_to_imu_rotation: [0.0, 0.0, 92.0]
       body_to_imu_rotation_std: 5.0
       car_motion: true
       car_motion_min_velocity: 3.0
@@ -138,7 +147,7 @@ estimate:
       max_iteration: 30
       num_threads: 4
       max_solver_time: 0.5
-      gnss_extrinsics: [-0.029, 0.354, -0.042]
+      gnss_extrinsics: [-1.653, 0.273, -0.121]
       gnss_extrinsics_initial_std: [0.0, 0.0, 0.0]
       time_window_length_slow_motion: 0.05
       time_window_length_dynamic_motion: 0.5
@@ -148,4 +157,4 @@ logging:
   enable: true
   min_log_level: 0
   log_to_stderr: true
-  file_directory: /ssd/bag_files/ion24/giciopen/1.1/bag
+  file_directory: /ssd/bag_files/multi_sensor_june_26/ccit_to_staples/hw_sync/rosbag2_2024_06_26-10_59_18/gici
