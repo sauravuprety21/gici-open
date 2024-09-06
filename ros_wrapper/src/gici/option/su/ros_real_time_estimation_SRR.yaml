@@ -1,4 +1,4 @@
-# GICI offline pseudo-real-time RTK/IMU LC estimation with ROS topics as input and output
+# GICI offline pseudo-real-time GNSS/IMU/Camera SRR estimation with ROS topics as input and output
 stream:
   streamers:
     - streamer:
@@ -25,17 +25,23 @@ stream:
         enable_ephemeris: true
         enable_ionosphere_parameter: true
     - streamer:
+        tag: str_dcb_file
+        output_tags: [fmt_dcb_file]
+        type: file
+        path: /home/zoroob/MSc/open-source/ion/gici-open/option/CAS0MGXRAP_20221580000_01D_01D_DCB.BSX
+        enable_time_tag: false
+    - streamer:
         tag: str_ros_imu
         type: ros
         topic_name: /mcu_node/data_link/icm/data
         io: input
         format: imu
     - streamer:
-        tag: str_dcb_file
-        output_tags: [fmt_dcb_file]
-        type: file
-        path: /home/zoroob/MSc/open-source/ion/gici-open/option/CAS0MGXRAP_20221580000_01D_01D_DCB.BSX
-        enable_time_tag: false
+        tag: str_ros_camera
+        type: ros
+        topic_name: /cam_1/image_raw
+        io: input
+        format: image 
     - streamer:
         tag: str_rtk_solution_file
         input_tags: [fmt_rtk_solution_file]
@@ -43,10 +49,10 @@ stream:
         path: /ssd/bag_files/multi_sensor_june_26/rtk_solution.txt
         enable_time_tag: false
     - streamer:
-        tag: str_lc_solution_file
-        input_tags: [fmt_lc_solution_file]
+        tag: str_srr_solution_file
+        input_tags: [fmt_srr_solution_file]
         type: file
-        path: /ssd/bag_files/multi_sensor_june_26/rtk_lc_solution.txt
+        path: /ssd/bag_files/multi_sensor_june_26/srr_solution.txt
         enable_time_tag: false
     - streamer:
         tag: str_solution
@@ -70,6 +76,21 @@ stream:
         queue_size: 100
         io: output
         format: path
+    - streamer:
+        tag: str_featured_image
+        type: ros
+        topic_name: featured_image
+        queue_size: 3
+        io: output
+        format: image
+    - streamer:
+        tag: str_landmarks
+        type: ros
+        topic_name: landmarks
+        queue_size: 3
+        marker_scale: 0.2
+        io: output
+        format: marker
   
   formators:
     - formator:
@@ -83,9 +104,9 @@ stream:
         use_esa: true
         use_esd: true
         talker_id: GP
-    - formator:   
+    - formator:
         io: output
-        tag: fmt_lc_solution_file
+        tag: fmt_srr_solution_file
         type: nmea 
         use_esa: true
         talker_id: GP
@@ -137,19 +158,29 @@ estimate:
       min_percentage_fixation_nl: 0.9
       ratio: 3.0
 - estimator:
-    tag: est_gnss_imu_lc
-    type: gnss_imu_lc
-    input_tags: [str_ros_imu, est_rtk]
+    tag: est_gnss_imu_camera_srr
+    type: gnss_imu_camera_srr
+    input_tags: [str_ros_camera, str_ros_imu, est_rtk]
+    str_ros_camera_roles: [mono]
     str_ros_imu_roles: [major]
     est_rtk_roles: [position_and_velocity]
-    fmt_dcb_file_roles: [code_bias]
-    output_tags: [str_solution, str_solution_odometry, str_solution_path, fmt_lc_solution_file]
+    output_tags: [fmt_srr_solution_file, str_solution, str_solution_odometry, str_solution_path, str_featured_image, str_landmarks]
     output_align_tag: str_ros_imu
-    output_downsample_rate: 1.0
+    output_downsample_rate: 1.0            
     compute_covariance: false
-    gnss_imu_lc_options:
-      max_window_length: 3
+    enable_input_align: true
+    input_align_latency: 0.2
+    enable_backend_data_sparsify: true    
+    pending_num_threshold: 5
+    gnss_imu_camera_srr_options:
+      max_keyframes: 10               
+      min_yaw_std_init_visual: 5.0
     gnss_loose_estimator_base_options:
+    visual_estimator_base_options:
+      feature_error_std: 10.0
+      stable_feature_error_std: 1.0
+      min_observation_stable: 20
+      landmark_outlier_rejection_threshold: 2.0
     imu_estimator_base_options:
       imu_parameters:
         rate: 103
@@ -159,18 +190,18 @@ estimate:
         sigma_a_c: 0.112 
         sigma_gw_c: 2.0881e-03
         sigma_aw_c: 2.7361e-2
-      body_to_imu_rotation: [-90.0, -90.0, 0.0]
+      body_to_imu_rotation: [-90.0, -90.0, 0.0]    
       body_to_imu_rotation_std: 5.0
-      car_motion: true
+      car_motion: true                             
       car_motion_min_velocity: 3.0
       car_motion_max_anguler_velocity: 5.0
-    estimator_base_options:
+    estimator_base_options:              
       max_iteration: 5
-      num_threads: 4
-      max_solver_time: 0.05
+      num_threads: 4     
+      max_solver_time: 0.02
       verbose_output: true
-      solver_type: dense_normal_cholesky
-      trust_region_strategy_type: levenberg_marquardt
+      solver_type: dense_schur
+      trust_region_strategy_type: dogleg
     gnss_imu_initializer_options:
       max_iteration: 30
       num_threads: 4
@@ -180,10 +211,46 @@ estimate:
       time_window_length_slow_motion: 0.5
       time_window_length_dynamic_motion: 3
       min_acceleration: 0.8
+    feature_handler_options:
+      max_features_per_frame: 100
+      max_n_kfs: 30
+      kfselect_min_numkfs: 30
+      kfselect_min_disparity: 10.0
+      kfselect_min_dist_metric: 0.5
+      kfselect_min_angle: 5.0  
+      kfselect_min_dt: 1.0
+      detector:
+        cell_size: 40            
+      initialization:
+      camera_parameters:              
+        label: "bfs"
+        cameras:
+        - camera:
+            label: cam0
+            image_width: 1440
+            image_height: 1080
+            type: pinhole
+            intrinsics:
+              cols: 1
+              rows: 4
+              data: [641.89627493,  641.09598787, 750.67002847, 588.42057937]
+            distortion:
+              type: radial-tangential  
+              parameters:
+                cols: 1
+                rows: 4
+                data: [-0.22290488, 0.03644382, 0.0004746,  -0.00010294]
+            mask: /home/zoroob/MSc/open-source/ion/gici-open/option/mask.png
+          T_B_C:
+            cols: 4
+            rows: 4
+            data: [0.0134381210697455122,   -0.999901594987671172, -0.00402706384669154413,  -0.0229793554058591656,
+                  0.999907681540912807,   0.0134460859659659704, -0.00195733688253543802,   -0.0210786309679912626,
+                  0.00201129251744842832, -0.00400038914436078377,     0.99998997574430859,    0.05008868367930974,
+                                      0,                       0,                       0,                       1]
 
 logging:
   enable: true
   min_log_level: 0
   log_to_stderr: true
   file_directory: /ssd/bag_files/multi_sensor_june_26/gici
-

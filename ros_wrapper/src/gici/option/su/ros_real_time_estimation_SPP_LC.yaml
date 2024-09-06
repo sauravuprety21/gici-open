@@ -32,7 +32,7 @@ stream:
       tag: str_solution_file
       input_tags: [fmt_solution_file]
       type: file
-      path: /ssd/bag_files/multi_sensor_june_26/ccit_to_staples/university_tree_cover/hwsync/spp_lc_solution.txt
+      path: /ssd/bag_files/multi_sensor_june_26/spp_lc_solution.txt
       enable_time_tag: false
   - streamer:
       tag: str_solution
@@ -141,12 +141,12 @@ estimate:
       max_solver_time: 0.5
       gnss_extrinsics: [-0.121, -1.653, 0.273]
       gnss_extrinsics_initial_std: [0.0, 0.0, 0.0]
-      time_window_length_slow_motion: 1
+      time_window_length_slow_motion: 0.5
       time_window_length_dynamic_motion: 3
-      min_acceleration: 0.5
+      min_acceleration: 0.8
 
 logging:
   enable: true
   min_log_level: 0
   log_to_stderr: true
-  file_directory: /ssd/bag_files/multi_sensor_june_26/ccit_to_staples/university_tree_cover/hwsync/gici
+  file_directory: /ssd/bag_files/multi_sensor_june_26/gici

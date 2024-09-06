@@ -1,5 +1,5 @@
 client:
-  path: /ssd/bag_files/multi_sensor_june_26/ccit_to_staples/university_tree_cover/rover/gnssraw.ubx
+  path: /ssd/bag_files/multi_sensor_june_26/downtown/downtown_segment/gnss/full_data/gnssraw.ubx
   type: gnss-raw
   sub_type: ublox
   start_time: 2024.06.26

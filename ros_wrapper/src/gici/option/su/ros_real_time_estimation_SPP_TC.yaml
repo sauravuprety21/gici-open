@@ -89,7 +89,7 @@ estimate:
     compute_covariance: false
     spp_imu_tc_options:
       max_window_length: 3
-    spp_options:
+      estimate_velocity: false
     gnss_estimator_base_options:
       gnss_common:
         min_elevation: 12.0
@@ -124,7 +124,7 @@ estimate:
       gnss_extrinsics_initial_std: [0.0, 0.0, 0.0]
       time_window_length_slow_motion: 1.5
       time_window_length_dynamic_motion: 3
-      min_acceleration: 0.5   
+      min_acceleration: 0.8
 
 logging:
   enable: true

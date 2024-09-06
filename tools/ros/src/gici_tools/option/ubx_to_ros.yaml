@@ -4,13 +4,13 @@ stream:
       tag: str_gnss_rov
       output_tags: [fmt_gnss_rov]
       type: file
-      path: /ssd/bag_files/multi_sensor_june_26/ccit_to_staples/university_tree_cover/rover/gnssraw.ubx
+      path: /ssd/bag_files/multi_sensor_june_26/downtown/downtown_segment/gnss/full_data/gnssraw.ubx
 
   - streamer:
       tag: str_gnss_eph_rov
       output_tags: [fmt_gnss_eph_rov]
       type: file
-      path: /ssd/bag_files/multi_sensor_june_26/ccit_to_staples/university_tree_cover/rover/gnssraw.ubx
+      path: /ssd/bag_files/multi_sensor_june_26/downtown/downtown_segment/gnss/full_data/gnssraw.ubx
   formators:
   - formator:
       io: input
@@ -30,7 +30,7 @@ rosbags:
     tag: rosbag_gnss_rov
     type: rosbag
     input_tags: [fmt_gnss_rov]
-    path: /ssd/bag_files/multi_sensor_june_26/ccit_to_staples/university_tree_cover/rover/gnss_rover.bag
+    path: /ssd/bag_files/multi_sensor_june_26/downtown/downtown_segment/gnss/full_data/gnss_rover.bag
     topic_name: /gici/gnss_rover
     format: gnss_raw
     enable_observation: true
@@ -38,7 +38,7 @@ rosbags:
     tag: rosbag_gnss_eph_rov
     type: rosbag
     input_tags: [fmt_gnss_eph_rov]
-    path: /ssd/bag_files/multi_sensor_june_26/ccit_to_staples/university_tree_cover/rover/rover_eph.bag
+    path: /ssd/bag_files/multi_sensor_june_26/downtown/downtown_segment/gnss/full_data/rover_eph.bag
     topic_name: /gici/rover_ephemeris
     format: gnss_raw
     enable_ephemeris: true
