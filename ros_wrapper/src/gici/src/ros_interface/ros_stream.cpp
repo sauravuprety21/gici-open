@@ -138,6 +138,29 @@ RosStream::RosStream(
           boost::bind(&RosStream::gnssSsrEphemeridesCallback, this, _1)));
         gnss_formats_.push_back(RosGnssDataFormat::EphemeridesCorrection);
       }
+      if (option_tools::safeGet(streamer_node->this_node,
+          "outage", &this->gnss_outage_)) {
+            if(this->gnss_outage_){
+              double ti, tf;
+              if(option_tools::safeGet(streamer_node->this_node,
+                  "outage_start", &ti)){
+                gtime_t start_;
+                start_.time = (time_t)ti;
+                start_.sec = ti - (double)start_.time;
+                this->gnss_out_start_ = utc2gpst(start_);
+                LOG(INFO) << "GNSS outage start time specified - " << this->gnss_out_start_.time*1e-9 << " " << this->gnss_out_start_.sec << " " << ti*1e-9;
+              }
+              if(option_tools::safeGet(streamer_node->this_node,
+                  "outage_stop", &tf)){
+                gtime_t stop_;
+
+                stop_.time = (time_t)tf-18;
+                stop_.sec = tf - (double)stop_.time;
+                this->gnss_out_stop_ = utc2gpst(stop_);
+                LOG(INFO) << "GNSS outage stop time specified - " << this->gnss_out_stop_.time*1e-9 << " " << this->gnss_out_stop_.sec << " " << tf*1e-9;
+                }
+            }
+          }
     }
     else {
       bool enable = false;
@@ -535,6 +558,17 @@ void RosStream::gnssObservationsCallback(
     std::make_shared<DataCluster>(FormatorType::GnssRaw);
   data_cluster->gnss->observation->n = 0;
   for (const auto& o : msg->observations) {
+    // Filter out observations that are in outage time interval
+    gtime_t obs_time = gpst2time(o.week, o.tow);
+    
+
+    if((this->gnss_outage_) &&
+      (copysign(1.0, timediff(obs_time, this->gnss_out_start_))
+      != copysign(1.0, timediff(obs_time, this->gnss_out_stop_))))
+    { 
+    continue; }
+    //continue;
+
     int n = data_cluster->gnss->observation->n;
     obsd_t *obs = data_cluster->gnss->observation->data + n;
     memset(obs, 0, sizeof(obsd_t));

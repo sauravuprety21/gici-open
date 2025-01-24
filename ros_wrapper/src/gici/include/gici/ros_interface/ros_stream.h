@@ -149,6 +149,9 @@ protected:
   int queue_size_;
   std::unique_ptr<PathPublisher> path_publisher_;
   
+  bool gnss_outage_;
+  gtime_t gnss_out_start_;
+  gtime_t gnss_out_stop_;
   // Static variables for stream binding
   static std::vector<RosStream *> static_this_;
 };
