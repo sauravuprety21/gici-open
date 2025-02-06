@@ -1,0 +1,45 @@
+stream:
+  streamers:
+  - streamer:
+      tag: str_gnss_ref
+      output_tags: [fmt_gnss_ref]
+      type: file
+      path: /ssd/bag_files/multi_sensor_jan_24_2025/rosbag2_2025_01_24-09_31_35_0_hw_synced/Ground Truth/Base/NMNE22130034G_2025-01-24_18-13-32.BIN
+  - streamer:
+      tag: str_ref_eph
+      output_tags: [fmt_ref_eph]
+      type: file
+      path: /ssd/bag_files/multi_sensor_jan_24_2025/rosbag2_2025_01_24-09_31_35_0_hw_synced/Ground Truth/Base/NMNE22130034G_2025-01-24_18-13-32.BIN
+  formators:
+  - formator:
+      io: input
+      tag: fmt_gnss_ref
+      type: gnss-raw
+      sub_type: novatel
+      start_time: 2025.01.25
+  - formator:
+      io: input
+      tag: fmt_ref_eph
+      type: gnss-raw
+      sub_type: novatel
+      start_time: 2025.01.25
+
+rosbags:
+- rosbag: 
+    tag: rosbag_gnss_ref
+    type: rosbag
+    input_tags: [fmt_gnss_ref]
+    path: /ssd/bag_files/multi_sensor_jan_24_2025/rosbag2_2025_01_24-09_31_35_0_hw_synced/Ground Truth/Base/NMNE22130034G_2025_01_24_18_13_32_Obs.bag
+    topic_name: /gici/nvtl_ref_obs
+    format: gnss_raw
+    enable_observation: true
+    enable_antenna_position: true
+- rosbag: 
+    tag: rosbag_gnss_eph
+    type: rosbag
+    input_tags: [fmt_ref_eph]
+    path: /ssd/bag_files/multi_sensor_jan_24_2025/rosbag2_2025_01_24-09_31_35_0_hw_synced/Ground Truth/Base/NMNE22130034G_2025_01_24_18_13_32_Eph.bag
+    topic_name: /gici/nvtl_ref_eph
+    format: gnss_raw
+    enable_ephemeris: true
+    enable_ionosphere_parameter: true

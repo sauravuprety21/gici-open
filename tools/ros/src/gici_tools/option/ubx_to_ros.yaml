@@ -4,33 +4,33 @@ stream:
       tag: str_gnss_rov
       output_tags: [fmt_gnss_rov]
       type: file
-      path: /ssd/bag_files/multi_sensor_june_26/downtown/downtown_segment/gnss/full_data/gnssraw.ubx
+      path: /ssd/bag_files/multi_sensor_jan_24_2025/rosbag2_2025_01_24-09_31_35_0_hw_synced/gnss/gnssraw.ubx
 
   - streamer:
       tag: str_gnss_eph_rov
       output_tags: [fmt_gnss_eph_rov]
       type: file
-      path: /ssd/bag_files/multi_sensor_june_26/downtown/downtown_segment/gnss/full_data/gnssraw.ubx
+      path: /ssd/bag_files/multi_sensor_jan_24_2025/rosbag2_2025_01_24-09_31_35_0_hw_synced/gnss/gnssraw.ubx
   formators:
   - formator:
       io: input
       tag: fmt_gnss_rov
       type: gnss-raw
       sub_type: ublox
-      start_time: 2024.06.26
+      start_time: 2025.01.24
   - formator:
       io: input
       tag: fmt_gnss_eph_rov
       type: gnss-raw
       sub_type: ublox
-      start_time: 2024.06.26
+      start_time: 2025.01.24
 
 rosbags:
 - rosbag: 
     tag: rosbag_gnss_rov
     type: rosbag
     input_tags: [fmt_gnss_rov]
-    path: /ssd/bag_files/multi_sensor_june_26/downtown/downtown_segment/gnss/full_data/gnss_rover.bag
+    path: /ssd/bag_files/multi_sensor_jan_24_2025/rosbag2_2025_01_24-09_31_35_0_hw_synced/gnss/gnss_rover.bag
     topic_name: /gici/gnss_rover
     format: gnss_raw
     enable_observation: true
@@ -38,7 +38,7 @@ rosbags:
     tag: rosbag_gnss_eph_rov
     type: rosbag
     input_tags: [fmt_gnss_eph_rov]
-    path: /ssd/bag_files/multi_sensor_june_26/downtown/downtown_segment/gnss/full_data/rover_eph.bag
+    path: /ssd/bag_files/multi_sensor_jan_24_2025/rosbag2_2025_01_24-09_31_35_0_hw_synced/gnss/rover_eph.bag
     topic_name: /gici/rover_ephemeris
     format: gnss_raw
     enable_ephemeris: true

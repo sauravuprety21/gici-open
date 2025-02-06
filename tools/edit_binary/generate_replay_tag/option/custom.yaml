@@ -1,8 +1,8 @@
 client:
-  path: /ssd/bag_files/multi_sensor_june_26/downtown/downtown_segment/gnss/full_data/gnssraw.ubx
+  path: /ssd/bag_files/multi_sensor_jan_24_2025/rosbag2_2025_01_24-09_31_35_0_hw_synced/Ground Truth/Base/NMNE22130034G_2025-01-24_18-13-32.BIN
   type: gnss-raw
-  sub_type: ublox
-  start_time: 2024.06.26
+  sub_type: novatel
+  start_time: 2025.01.24
 
 # client:
 #   path: /ssd/bag_files/multi_sensor_june_26/gnss_base_station/novatel_base.gps
