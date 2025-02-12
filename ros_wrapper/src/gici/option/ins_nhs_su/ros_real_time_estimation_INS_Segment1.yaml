@@ -1,0 +1,94 @@
+# GICI offline pseudo-real-time SPP/IMU LC estimation with ROS topics as input and output
+stream:
+  streamers:
+  - streamer:
+      tag: str_ros_imu
+      type: ros
+      topic_name: /gici/imu_raw
+      io: input
+      format: imu
+  - streamer:
+      tag: str_solution_file
+      input_tags: [fmt_solution_file]
+      type: file
+      path: /home/zoroob/MSc/ins_nhc_su/data/gici-open/1.1/outputs/segments/segment1/ins_only/gici_open/ins_solution.nmea
+      enable_time_tag: false
+  - streamer:
+      tag: str_solution
+      type: ros
+      topic_name: solution
+      queue_size: 5
+      io: output
+      format: pose_stamped
+  - streamer:
+      tag: str_solution_odometry
+      type: ros
+      topic_name: solution_odometry
+      queue_size: 10
+      io: output
+      format: odometry
+      subframe_id: Body
+  - streamer:
+      tag: str_solution_path
+      type: ros
+      topic_name: solution_path
+      queue_size: 100
+      io: output
+      format: path
+
+  formators:
+  - formator:
+      io: output
+      tag: fmt_solution_file
+      type: nmea 
+      use_esa: true
+      use_esd: true
+      talker_id: GP
+
+  replay:
+    enable: false
+
+estimate:
+- estimator:
+    tag: est_ins_mech
+    type: ins
+    input_tags: [str_ros_imu]
+    str_ros_imu_roles: [major]
+    output_tags: [str_solution, str_solution_odometry, str_solution_path, fmt_solution_file]
+    output_align_tag: str_ros_imu
+    output_downsample_rate: 1.0
+    compute_covariance: false
+    estimator_base_options:
+      force_initial_global_position: true
+      initial_global_position: [31.0299236017, 121.44114007, 16.961]
+      compute_covariance: true
+    imu_estimator_base_options:
+      imu_parameters:
+        sigma_bg: 0.01
+        sigma_ba: 0.01
+        sigma_g_c: 2.6700e-02
+        sigma_a_c: 0.112 
+        sigma_gw_c: 2.0881e-03
+        sigma_aw_c: 2.7361e-2
+      body_to_imu_rotation: [-90.0, -90.0, 0.0]
+      body_to_imu_rotation_std: 1.0
+      car_motion: false
+      car_motion_min_velocity: 3.0
+      car_motion_max_anguler_velocity: 5.0
+      use_zupt : false
+    ins_options:
+      max_window_length: 1
+    ins_initializer_options:
+      t0: 1679305108.0
+      initial_rpy: [-0.90309001,   0.80889952, -69.83475042]
+      initial_velocity: [8.2658899, 3.1408411, 0.026144235]
+      initial_position: [31.0299236017, 121.44114007, 16.961]
+      initial_accel_bias: [-0.17547453, 0.00032247839, -0.0076932031]
+      initial_gyro_bias: [-0.0013548729, -0.00024185148, 0.0031996826]
+
+logging:
+  enable: true
+  min_log_level: 0
+  log_to_stderr: true
+  file_directory: /home/zoroob/MSc/ins_nhc_su/data/gici-open/1.1/outputs/segments/segment1/ins_only/gici_open/logs/
+

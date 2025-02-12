@@ -18,6 +18,7 @@
 #include "gici/estimate/estimating.h"
 #include "gici/utility/spin_control.h"
 #include "gici/vision/feature_handler.h"
+#include "gici/imu/ins_estimator.h"
 #include "gici/gnss/spp_estimator.h"
 #include "gici/gnss/ppp_estimator.h"
 #include "gici/gnss/sdgnss_estimator.h"
@@ -109,7 +110,8 @@ private:
               estimator_type == EstimatorType::SppImuCameraRrr ||
               estimator_type == EstimatorType::DgnssImuCameraRrr ||
               estimator_type == EstimatorType::RtkImuCameraRrr || 
-              estimator_type == EstimatorType::PppImuCameraRrr);
+              estimator_type == EstimatorType::PppImuCameraRrr ||
+              estimator_type == EstimatorType::Ins);
     }
     else if (sensor_type == SensorType::Camera) {
       return (estimator_type == EstimatorType::GnssImuCameraSrr || 
@@ -216,6 +218,8 @@ protected:
   SppImuCameraRrrEstimatorOptions spp_imu_camera_rrr_options_;
   RtkImuCameraRrrEstimatorOptions rtk_imu_camera_rrr_options_;
 
+  InsEstimatorOptions ins_options_;
+  InsInitializerOptions ins_init_options_;
   // Solutions
   bool backend_firstly_updated_ = false;
 };

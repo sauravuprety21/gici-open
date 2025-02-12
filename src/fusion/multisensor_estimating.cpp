@@ -10,6 +10,7 @@
 
 #include "gici/imu/imu_common.h"
 #include "gici/imu/imu_error.h"
+#include "gici/imu/ins_estimator.h"
 #include "gici/utility/spin_control.h"
 #include "gici/gnss/ppp_estimator.h"
 #include "gici/gnss/sdgnss_estimator.h"
@@ -55,7 +56,6 @@ MultiSensorEstimating::MultiSensorEstimating(
       imu_base_node.IsDefined()) {
     option_tools::loadOptions(imu_base_node, imu_base_options_);
   }
-
   // load camera base options
   YAML::Node visual_estimator_base_node = node["visual_estimator_base_options"];
   YAML::Node feature_handler_node = node["feature_handler_options"];
@@ -343,6 +343,29 @@ MultiSensorEstimating::MultiSensorEstimating(
     CHECK_NOTNULL(visual_estimator);
     visual_estimator->setFeatureHandler(feature_handler_);
   }
+  // Ins standalone mechanization 
+  else if(type_ == EstimatorType::Ins)
+  {
+    YAML::Node ins_node = node["ins_options"];
+    if(ins_node.IsDefined()){
+      
+      option_tools::loadOptions(ins_node, ins_options_);
+    }
+    YAML::Node ins_init_node = node["ins_initializer_options"];
+    if(ins_init_node.IsDefined()){
+      option_tools::loadOptions(ins_init_node, ins_init_options_);
+    }
+    estimator_.reset(new InsEstimator(
+      ins_options_, ins_init_options_, imu_base_options_, base_options_));
+    
+    backend_firstly_updated_ = true;
+    
+    Eigen::Vector3d lla = ins_init_options_.lla_0.eval();
+    Eigen::Vector3d lla_rad = GeoCoordinate::degToRad(lla);
+    solution_.coordinate = std::make_shared<GeoCoordinate>(lla_rad,
+             GeoType::LLA);
+    solution_.status = GnssSolutionStatus::DeadReckoning;
+  }
   else {
     LOG(ERROR) << "Invalid estimator type: " << static_cast<int>(type_);
     return;
@@ -469,6 +492,10 @@ void MultiSensorEstimating::resetProcessors()
       std::dynamic_pointer_cast<VisualEstimatorBase>(estimator_);
     CHECK_NOTNULL(visual_estimator);
     visual_estimator->setFeatureHandler(feature_handler_);
+  } else if(type_ == EstimatorType::Ins)
+  {
+    estimator_.reset(new InsEstimator(
+      ins_options_, ins_init_options_, imu_base_options_, base_options_));
   }
   else {
     LOG(ERROR) << "Invalid estimator type: " << static_cast<int>(type_);
@@ -576,6 +603,11 @@ bool MultiSensorEstimating::updateSolution()
       !estimator_->getCovarianceAt(timestamp, solution_.covariance))) {
     return false;
   }
+  gtime_t time_gpst = gnss_common::doubleToGtime(timestamp);
+  gtime_t time_utc = gpst2utc(time_gpst);
+
+  LOG(INFO) << std::setprecision(15) << gnss_common::gtimeToDouble(time_utc) << "\t" 
+        << std::setprecision(8) << solution_.speed_and_bias.transpose(); 
 
   // if we have GNSS, get GNSS variables
   if (estimatorTypeContains(SensorType::GNSS, type_)) {

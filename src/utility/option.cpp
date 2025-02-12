@@ -25,6 +25,7 @@
 #include "gici/vision/feature_handler.h"
 #include "gici/gnss/code_phase_maps.h"
 #include "gici/imu/imu_estimator_base.h"
+#include "gici/imu/ins_estimator.h"
 #include "gici/gnss/gnss_loose_estimator_base.h"
 #include "gici/fusion/gnss_imu_lc_estimator.h"
 #include "gici/fusion/gnss_imu_initializer.h"
@@ -159,6 +160,7 @@ void convert<std::string, EstimatorType>
   MAP_IN_OUT("dgnss_imu_camera_rrr", EstimatorType::DgnssImuCameraRrr);
   MAP_IN_OUT("rtk_imu_camera_rrr", EstimatorType::RtkImuCameraRrr);
   MAP_IN_OUT("Ppp_imu_camera_rrr", EstimatorType::PppImuCameraRrr);
+  MAP_IN_OUT("ins", EstimatorType::Ins);
   LOG_INVALId;
 }
 
@@ -888,6 +890,75 @@ void loadOptions<VisualEstimatorBaseOptions>(
   }
   else {
     LOG(INFO) << "Unable to load camera_extrinsics_initial_std. Using default instead.";
+  } 
+}
+
+template<>
+void loadOptions<InsEstimatorOptions>(
+    YAML::Node& node, InsEstimatorOptions& options)
+{
+  LOAD_COMMON(max_window_length);
+}
+
+template <>
+void loadOptions<InsInitializerOptions>(
+    YAML::Node& node,InsInitializerOptions& options)
+{
+  LOAD_COMMON(t0);
+
+  std::vector<double> rpy_;
+  if(option_tools::safeGet(node, "initial_rpy",
+    &rpy_) && 
+      rpy_.size() == 3){
+    for(size_t i = 0; i < 3; i++) {
+      options.rpy_0[i] = rpy_[i] * D2R;
+    }
+  } else {
+    LOG(INFO) << "Unable to load init. roll/pitch/yaw. Using default instead.";
+  } 
+
+  std::vector<double> vel0_;
+  if(option_tools::safeGet(node, "initial_velocity",
+    &vel0_) && 
+      vel0_.size() == 3){
+    for(size_t i = 0; i < 3; i++) {
+      options.vel_0[i] = vel0_[i];
+    }
+  } else {
+    LOG(INFO) << "Unable to load init. velocity. Using default instead.";
+  } 
+
+  std::vector<double> lla0_;
+  if(option_tools::safeGet(node, "initial_position",
+    &lla0_) && 
+      lla0_.size() == 3){
+    for(size_t i = 0; i < 3; i++) {
+      options.lla_0[i] = lla0_[i];
+    }
+  }  else {
+    LOG(INFO) << "Unable to load init. position. Using default instead.";
+  } 
+
+  std::vector<double> accel_bias0_;
+  if(option_tools::safeGet(node, "initial_accel_bias",
+    &accel_bias0_) && 
+      accel_bias0_.size() == 3){
+    for(size_t i = 0; i < 3; i++) {
+      options.accel_bias_0[i] = accel_bias0_[i];
+    }
+  }  else {
+    LOG(INFO) << "Unable to load accel. bias. Using default instead.";
+  } 
+
+  std::vector<double> gyro_bias0_;
+  if(option_tools::safeGet(node, "initial_gyro_bias",
+    &gyro_bias0_) && 
+      gyro_bias0_.size() == 3){
+    for(size_t i = 0; i < 3; i++) {
+      options.gyro_bias_0[i] = gyro_bias0_[i];
+    }
+  }  else {
+    LOG(INFO) << "Unable to load gyro. bias. Using default instead.";
   } 
 }
 

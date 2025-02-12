@@ -32,6 +32,7 @@ std::string estimatorTypeToString(const EstimatorType& type)
   if (type == EstimatorType::DgnssImuCameraRrr) return "DGNSS/IMU/Camera RRR";
   if (type == EstimatorType::RtkImuCameraRrr) return "RTK/IMU/Camera RRR";
   if (type == EstimatorType::PppImuCameraRrr) return "PPP/IMU/Camera RRR";
+  if (type == EstimatorType::Ins) return "INS";
   return "";
 }
 
