@@ -112,6 +112,7 @@ void writeRosbag(const std::shared_ptr<DataCluster> data_cluster,
       gici_ros::GnssEphemerides msg;
       nav_t *nav = gnss.ephemeris;
       for (int i = 0; i < MAXSAT; i++) {
+        if (nav->eph == nullptr) continue;
         eph_t *eph = nav->eph + i;
         if (eph->sat == 0) continue;
         gici_ros::GnssEphemeris e;
@@ -159,6 +160,7 @@ void writeRosbag(const std::shared_ptr<DataCluster> data_cluster,
         msg.ephemerides.push_back(e);
       }
       for (int i = 0; i < MAXPRNGLO; i++) {
+        if (nav->geph == nullptr) continue;
         geph_t *geph = nav->geph + i;
         if (geph->sat == 0) continue;
         gici_ros::GlonassEphemeris e;
