@@ -26,13 +26,17 @@ enum class FormatorType {
   RTCM2, 
   RTCM3,
   GnssRaw, 
+  RINEX, 
   ImageV4L2,
   ImagePack,  
   IMUPack,
+  IMUText,
   OptionPack, 
   NMEA,
   DcbFile,
-  AtxFile
+  AtxFile, 
+  Sp3File,
+  ClkFile
 };
 
 // GNSS data types
@@ -43,7 +47,9 @@ enum class GnssDataType {
   AntePos = 5,  // Antenna position
   IonAndUtcPara = 9,  // Ionosphere and UTC parameters
   SSR = 10,
-  PhaseCenter   // PCVs and PCOs
+  PhaseCenter,   // PCVs and PCOs
+  PreciseOrbit,  // From SP3
+  PreciseClock,  // From CLK
 };
 
 // Data 
@@ -123,15 +129,28 @@ enum class GnssRawFormats {
 
 // Max number of output data buffers for decoders
 struct MaxDataSize {
-  static const int RTCM2 = 30;
+  static const int RTCM2 = 100;
   static const int RTCM3 = RTCM2;
   static const int GnssRaw = RTCM2;
-  static const int ImagePack = 2;
-  static const int IMUPack = 500;
+  static const int RINEX = RTCM2;
+  static const int ImagePack = 3;
+  static const int IMUPack = 2000;
 };
 
 // Tools for RTKLIB types
 namespace gnss_common {
+
+// Realloc and add ephemeris
+extern int add_eph(nav_t *nav, const eph_t *eph);
+
+// Realloc and add glonass ephemeris
+extern int add_geph(nav_t *nav, const geph_t *geph);
+
+// Sort and unique ephemeris
+extern void uniqeph(nav_t *nav);
+
+// Sort and unique glonass ephemeris 
+extern void uniqgeph(nav_t *nav);
 
 // Update observation data
 extern void updateObservation(
@@ -202,8 +221,8 @@ public:
     double start_time; 
   };
 
-  RTCM2Formator(Option& option);
-  RTCM2Formator(YAML::Node& node);
+  RTCM2Formator(const Option& option);
+  RTCM2Formator(const YAML::Node& node);
   ~RTCM2Formator();
 
   // Decode stream to data
@@ -224,8 +243,8 @@ public:
     double start_time; 
   };
 
-  RTCM3Formator(Option& option);
-  RTCM3Formator(YAML::Node& node);
+  RTCM3Formator(const Option& option);
+  RTCM3Formator(const YAML::Node& node);
   ~RTCM3Formator();
 
   // Decode stream to data
@@ -247,8 +266,8 @@ public:
     std::string sub_type;
   };
 
-  GnssRawFormator(Option& option);
-  GnssRawFormator(YAML::Node& node);
+  GnssRawFormator(const Option& option);
+  GnssRawFormator(const YAML::Node& node);
   ~GnssRawFormator();
 
   // Decode stream to data
@@ -263,6 +282,32 @@ protected:
   GnssRawFormats format_;
 };
 
+// GNSS Rinex
+class RINEXFormator : public FormatorBase {
+public:
+  struct Option {
+    int buffer_length = 32768;
+  };
+
+  RINEXFormator(const Option& option);
+  RINEXFormator(const YAML::Node& node);
+  ~RINEXFormator();
+
+  // Decode stream to data
+  int decode(const uint8_t *buf, int size, 
+    std::vector<std::shared_ptr<DataCluster>>& data) override;
+
+  // Encode data to stream
+  int encode(const std::shared_ptr<DataCluster>& data, uint8_t *buf) override;
+
+protected:
+  rnxctr_t rnx_;
+  bool header_decoded_ = false;
+  std::string line_;
+  char *buf_memory_, *p_memory_;
+  FILE *fp_memory_;
+};
+
 // Image V4L2
 class ImageV4L2Formator : public FormatorBase {
 public:
@@ -272,8 +317,8 @@ public:
     int step = 1;
   };
 
-  ImageV4L2Formator(Option& option);
-  ImageV4L2Formator(YAML::Node& node);
+  ImageV4L2Formator(const Option& option);
+  ImageV4L2Formator(const YAML::Node& node);
   ~ImageV4L2Formator();
 
   // Decode stream to data
@@ -296,8 +341,8 @@ public:
     int step = 1;
   };
 
-  ImagePackFormator(Option& option);
-  ImagePackFormator(YAML::Node& node);
+  ImagePackFormator(const Option& option);
+  ImagePackFormator(const YAML::Node& node);
   ~ImagePackFormator();
 
   // Decode stream to data
@@ -318,8 +363,8 @@ public:
     
   };
 
-  IMUPackFormator(Option& option);
-  IMUPackFormator(YAML::Node& node);
+  IMUPackFormator(const Option& option);
+  IMUPackFormator(const YAML::Node& node);
   ~IMUPackFormator();
 
   // Decode stream to data
@@ -340,8 +385,8 @@ public:
     
   };
 
-  OptionFormator(Option& option);
-  OptionFormator(YAML::Node& node);
+  OptionFormator(const Option& option);
+  OptionFormator(const YAML::Node& node);
   ~OptionFormator();
 
   // Decode stream to data
@@ -368,8 +413,8 @@ public:
     std::string talker_id = "GN";
   };
 
-  NmeaFormator(Option& option);
-  NmeaFormator(YAML::Node& node);
+  NmeaFormator(const Option& option);
+  NmeaFormator(const YAML::Node& node);
   ~NmeaFormator();
 
   // Decode stream to data
@@ -409,8 +454,8 @@ public:
     
   };
 
-  DcbFileFormator(Option& option);
-  DcbFileFormator(YAML::Node& node);
+  DcbFileFormator(const Option& option);
+  DcbFileFormator(const YAML::Node& node);
   ~DcbFileFormator();
 
   // Decode stream to data
@@ -438,8 +483,8 @@ public:
     
   };
 
-  AtxFileFormator(Option& option);
-  AtxFileFormator(YAML::Node& node);
+  AtxFileFormator(const Option& option);
+  AtxFileFormator(const YAML::Node& node);
   ~AtxFileFormator();
 
   // Decode stream to data
@@ -474,6 +519,7 @@ inline std::shared_ptr<FormatorBase> makeFormator( \
 MAKE_FORMATOR(RTCM2Formator);
 MAKE_FORMATOR(RTCM3Formator);
 MAKE_FORMATOR(GnssRawFormator);
+MAKE_FORMATOR(RINEXFormator);
 MAKE_FORMATOR(ImageV4L2Formator);
 MAKE_FORMATOR(ImagePackFormator);
 MAKE_FORMATOR(IMUPackFormator);
@@ -483,7 +529,7 @@ MAKE_FORMATOR(DcbFileFormator);
 MAKE_FORMATOR(AtxFileFormator);
 
 // Get formator handle from yaml
-std::shared_ptr<FormatorBase> makeFormator(YAML::Node& node);
+std::shared_ptr<FormatorBase> makeFormator(const YAML::Node& node);
 
 
 }
