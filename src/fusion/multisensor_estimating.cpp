@@ -603,11 +603,11 @@ bool MultiSensorEstimating::updateSolution()
       !estimator_->getCovarianceAt(timestamp, solution_.covariance))) {
     return false;
   }
-  gtime_t time_gpst = gnss_common::doubleToGtime(timestamp);
-  gtime_t time_utc = gpst2utc(time_gpst);
+  // gtime_t time_gpst = gnss_common::doubleToGtime(timestamp);
+  // gtime_t time_utc = gpst2utc(time_gpst);
 
-  LOG(INFO) << std::setprecision(15) << gnss_common::gtimeToDouble(time_utc) << "\t" 
-        << std::setprecision(8) << solution_.speed_and_bias.transpose(); 
+  // LOG(INFO) << std::setprecision(15) << gnss_common::gtimeToDouble(time_utc) << "\t" 
+  //       << std::setprecision(8) << solution_.speed_and_bias.transpose(); 
 
   // if we have GNSS, get GNSS variables
   if (estimatorTypeContains(SensorType::GNSS, type_)) {
