@@ -474,7 +474,6 @@ bool RtkImuCameraRrrEstimator::estimate()
          states_.size() > rrr_options_.max_gnss_window_length_minor) {
     states_.pop_front();
     ambiguity_states_.pop_front();
-    gnss_measurement_pairs_.pop_front();
   }
   // only keep frame measurement data for two epochs
   while (frame_bundles_.size() > 2) frame_bundles_.pop_front();
