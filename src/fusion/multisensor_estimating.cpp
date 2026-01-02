@@ -940,9 +940,13 @@ void MultiSensorEstimating::runImageFrontend()
     bool ret = false;
     Transformation T_WS;
     if (!estimator_->getPoseEstimateAt(timestamp, T_WS)) {
+      // LOG(WARNING) << "Cannot get pose estimate at timestamp " 
+      //              << std::fixed << timestamp << " for image frontend!";
       ret = feature_handler_->addImageBundle({image}, timestamp);
     }
     else {
+      // LOG(INFO) << "Got pose estimate at timestamp " 
+      //              << std::fixed << timestamp << " for image frontend!";
       ret = feature_handler_->addImageBundle({image}, timestamp, {T_WS});
     }
     image_frontend_measurements_.pop_front();

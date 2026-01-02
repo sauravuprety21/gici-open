@@ -178,6 +178,7 @@ void FeatureHandler::setPoseAndAdjust(const double timestamp, const Transformati
 bool FeatureHandler::needKeyFrame(
   const FramePtr& last_keyframe, const FramePtr& frame)
 {
+
   // Get last keyframe
   const FramePtr keyframe = last_keyframe;
 
@@ -197,6 +198,10 @@ bool FeatureHandler::needKeyFrame(
   // If global scale initialized, we use distance and angle matric.
   if (global_scale_initialized_)
   {
+    if(!frame->has_transform_){
+      LOG(INFO) << "No valid pose for this frame. Cannot set this frame as keyframe.";
+      return false;
+    }
     const double a =
         Quaternion::log(frame->T_f_w_.getRotation() *
                         keyframe->T_f_w_.getRotation().inverse()).norm()
@@ -463,13 +468,14 @@ void FeatureHandler::setKeyFrame(const FrameBundlePtr& frame_bundle)
 {
   // check if this frame tracked enough landmarks
   const FramePtr& frame = frame_bundle->at(0);
+
   int num_landmarks = 0;
   for (const auto& type : frame->type_vec_) {
     if (isSeed(type)) num_landmarks++;
   }
   if (num_landmarks < options_.kfselect_min_numkfs) {
-    // LOG(INFO) << "Too few landmarks tracked: " << num_landmarks
-    //           << ". Cannot set this frame as keyframe.";
+    // LOG(WARNING) << "Too few landmarks tracked: " << num_landmarks
+    //           << ". Should not set this frame as keyframe.";
     // return;
   }
 
