@@ -166,9 +166,7 @@ bool ImuEstimatorBase::getPoseEstimateAt(
     imu_state_mutex_.unlock(); return false;
   }
   // not sufficiant IMU data
-  if ((imu_measurements_.back().timestamp < timestamp) &&
-    (abs(imu_measurements_.back().timestamp - timestamp) > 1e-4)) {
-  
+  if (imu_measurements_.back().timestamp < timestamp) {
     // LOG(WARNING) << "Insufficient IMU data for IMU integration at timestamp " 
     //              << std::fixed << imu_measurements_.back().timestamp << " < " << timestamp << "!";
     imu_state_mutex_.unlock(); 
