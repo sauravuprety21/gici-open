@@ -712,6 +712,8 @@ protected:
   bool is_ppp_ = false; 
   bool is_use_phase_ = false;
   bool has_velocity_estimate_ = false;
+  bool has_first_ambguity_fix_ = false;
+
 
   // Intermediate data loggers
   std::ofstream ambiguity_logger_;
