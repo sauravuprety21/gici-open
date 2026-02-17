@@ -507,7 +507,7 @@ void GnssEstimatorBase::correctCodeBias(
       double bias = code_bias->getCodeBias(prn, code, accept_coarse);
       if (bias == 0.0) {
         // code bias not availible
-        observation.pseudorange = 0.0;
+        // observation.pseudorange = 0.0;
       }
       else {
         observation.pseudorange += bias;
@@ -540,7 +540,7 @@ void GnssEstimatorBase::correctPhaseBias(GnssMeasurement& measurement)
       double bias = phase_bias->getPhaseBias(prn, phase_id);
       if (bias == 0.0) {
         // phase bias not availible
-        observation.phaserange = 0.0;
+        // observation.phaserange = 0.0;
       }
       else {
         observation.phaserange += bias;
