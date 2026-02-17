@@ -253,12 +253,17 @@ bool RtkImuTcEstimator::estimate()
     const double thr = gnss_base_options_.good_observation_max_reject_ratio;
     if (isGnssGoodObservation() && ratio_pseudorange < thr && 
         ratio_phaserange < thr && ratio_doppler < thr) {
-      if (curState().status != GnssSolutionStatus::Fixed) num_continuous_unfix_++;
-      else num_continuous_unfix_ = 0; 
+      if (curState().status != GnssSolutionStatus::Fixed){
+        if(has_first_ambguity_fix_) num_continuous_unfix_++;
+      } 
+      else {
+        num_continuous_unfix_ = 0;
+        has_first_ambguity_fix_ = true; 
+      }
     }
     else num_continuous_unfix_ = 0;
     if (num_continuous_unfix_ > 
-        gnss_base_options_.reset_ambiguity_min_num_continuous_unfix) {
+        gnss_base_options_.reset_ambiguity_min_num_continuous_unfix && has_first_ambguity_fix_) {
       LOG(INFO) << "Continuously unfix under good observations. Clear current ambiguities.";
       resetAmbiguityEstimation();
       num_continuous_unfix_ = 0;
