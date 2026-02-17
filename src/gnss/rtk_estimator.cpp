@@ -72,7 +72,10 @@ bool RtkEstimator::addGnssMeasurementAndState(
     return false;
   }
   Eigen::Vector3d position_prior = spp_estimator_->getPositionEstimate();
+  Eigen::Matrix3d position_prior_covar = spp_estimator_->getPositionCovariance();
   Eigen::Vector3d velocity_prior = spp_estimator_->getVelocityEstimate();
+  Eigen::Matrix3d velocity_prior_covar = spp_estimator_->getVelocityCovariance();
+
   curState().status = GnssSolutionStatus::Single;
 
   // Set to local measurement handle
@@ -146,10 +149,10 @@ bool RtkEstimator::addGnssMeasurementAndState(
   // Add position and velocity prior constraints
   if (isFirstEpoch()) {
     addGnssPositionResidualBlock(curState(), 
-      position_prior, gnss_base_options_.error_parameter.initial_position);
+      position_prior, position_prior_covar);
     if (rtk_options_.estimate_velocity) {
       addGnssVelocityResidualBlock(curState(), 
-        velocity_prior, gnss_base_options_.error_parameter.initial_velocity);
+        velocity_prior, velocity_prior_covar);
     }
   }
 

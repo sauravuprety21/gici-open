@@ -190,10 +190,18 @@ protected:
   // Add position residual block to graph
   void addGnssPositionResidualBlock(
     const State& state, const Eigen::Vector3d& position, const double std);
+  
+  // Add position residual block to graph
+  void addGnssPositionResidualBlock(
+    const State& state, const Eigen::Vector3d& position, const Eigen::Matrix3d& covar);
 
   // Add velocity residual block to graph
   void addGnssVelocityResidualBlock(
     const State& state, const Eigen::Vector3d& velocity, const double std);
+
+  // Add velocity residual block to graph
+  void addGnssVelocityResidualBlock(
+    const State& state, const Eigen::Vector3d& velocity, const Eigen::Matrix3d& covar);
 
   // Add pseudorange residual blocks to graph
   void addPseudorangeResidualBlocks(

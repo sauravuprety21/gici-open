@@ -76,6 +76,11 @@ public:
     return getFrequencyEstimate(lastState());
   }
 
+  // Get position covariance in ECEF
+  inline Eigen::Matrix3d getPositionCovariance() {
+    return getPositionCovariance(lastState());
+  }
+
   // Get velocity covariance in ECEF
   inline Eigen::Matrix3d getVelocityCovariance() {
     return getVelocityCovariance(lastState());
@@ -96,6 +101,9 @@ protected:
 
   // Get frequency estimate
   std::map<char, double> getFrequencyEstimate(const State& state);
+
+  // Get velocity covariance in ECEF
+  Eigen::Matrix3d getPositionCovariance(const State& state);
 
   // Get velocity covariance in ECEF
   Eigen::Matrix3d getVelocityCovariance(const State& state);

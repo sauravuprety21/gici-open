@@ -360,6 +360,23 @@ std::map<char, double> SppEstimator::getFrequencyEstimate(const State& state)
   return system_to_freq;
 }
 
+// Get position covariance in ECEF
+Eigen::Matrix3d SppEstimator::getPositionCovariance(const State& state)
+{
+  BackendId position_id = changeIdType(state.id, IdType::gPosition);
+  if (!graph_->parameterBlockExists(position_id .asInteger())) {
+    return Eigen::Matrix3d::Zero();
+  }
+  std::vector<size_t> parameter_block_ids;
+  parameter_block_ids.push_back(position_id .asInteger());
+
+  // compute covariance
+  Eigen::MatrixXd covariance;
+  CHECK(graph_->computeCovariance(parameter_block_ids, covariance));
+  CHECK_EQ(covariance.cols(), 3);
+  return covariance;
+}
+
 // Get velocity covariance in ECEF
 Eigen::Matrix3d SppEstimator::getVelocityCovariance(const State& state)
 {

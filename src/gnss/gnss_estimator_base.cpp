@@ -695,12 +695,39 @@ void GnssEstimatorBase::addGnssPositionResidualBlock(
       graph_->parameterBlockPtr(state.id_in_graph.asInteger()));
 }
 
+// Add position residual block to graph
+void GnssEstimatorBase::addGnssPositionResidualBlock(
+    const State& state, const Eigen::Vector3d& position, const Eigen::Matrix3d& covar)
+{
+  Eigen::Matrix3d information = covar.inverse();
+  std::shared_ptr<PositionError<3>> position_error = 
+    std::make_shared<PositionError<3>>(position, information);
+  ceres::ResidualBlockId residual_id = 
+    graph_->addResidualBlock(position_error, 
+      nullptr,   
+      graph_->parameterBlockPtr(state.id_in_graph.asInteger()));
+}
+
 // Add velocity residual block to graph
 void GnssEstimatorBase::addGnssVelocityResidualBlock(
   const State& state, const Eigen::Vector3d& velocity, const double std)
 {
   BackendId velocity_id = createGnssVelocityId(state.id_in_graph.bundleId());
   Eigen::Matrix3d information = Eigen::Matrix3d::Identity() * (1.0 / square(std));
+  std::shared_ptr<VelocityError<3>> velocity_error = 
+    std::make_shared<VelocityError<3>>(velocity, information);
+  ceres::ResidualBlockId residual_id = 
+    graph_->addResidualBlock(velocity_error, 
+      nullptr,   
+      graph_->parameterBlockPtr(velocity_id.asInteger()));
+}
+
+// Add velocity residual block to graph
+void GnssEstimatorBase::addGnssVelocityResidualBlock(
+    const State& state, const Eigen::Vector3d& velocity, const Eigen::Matrix3d& covar)
+{
+  BackendId velocity_id = createGnssVelocityId(state.id_in_graph.bundleId());
+  Eigen::Matrix3d information = covar.inverse();
   std::shared_ptr<VelocityError<3>> velocity_error = 
     std::make_shared<VelocityError<3>>(velocity, information);
   ceres::ResidualBlockId residual_id = 
