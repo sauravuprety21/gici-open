@@ -1,0 +1,149 @@
+FROM osrf/ros:noetic-desktop-full
+
+# Set non-interactive mode to avoid prompts
+ENV DEBIAN_FRONTEND=noninteractive \
+    NVIDIA_DRIVER_CAPABILITIES=all \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+
+# Install necessary system dependencies 
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    git \
+    wget \
+    curl \
+    gnupg \
+    nano \
+    gedit \
+    python3-pip \
+    locales && \
+    locale-gen en_US en_US.UTF-8 && \
+    update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 && \
+    rm -rf /var/lib/apt/lists/*
+    
+WORKDIR /tmp
+
+# eigen-3.4.0
+RUN wget https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz &&\
+    tar -zxvf eigen-3.4.0.tar.gz &&\
+    cd eigen-3.4.0  && \
+    mkdir build && cd build && \
+    cmake ..    && \
+    make -j$(nproc) && \
+    make install && \
+    cd .. && \
+    rm -rf eigen-3.4.0 eigen-3.4.0.tar.gz
+
+# opencv-4.2.0.
+RUN git clone -b 4.2.0 https://github.com/opencv/opencv.git && \
+    cd opencv && \
+    mkdir build && \
+    cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release \
+             -DINSTALL_C_EXAMPLES=OFF \
+             -DINSTALL_PYTHON_EXAMPLES=OFF && \
+    make install -j$(nproc) && \
+    cd ../.. && \
+    rm -rf opencv
+
+# yaml-cpp-0.6.3
+RUN wget https://github.com/jbeder/yaml-cpp/archive/refs/tags/yaml-cpp-0.6.3.tar.gz && \
+    tar -zxvf yaml-cpp-0.6.3.tar.gz && \
+    cd yaml-cpp-yaml-cpp-0.6.3 && \
+    mkdir build && cd build && \
+    cmake .. -DYAML_BUILD_SHARED_LIBS=on && \
+    make -j$(nproc) && \
+    make install && \
+    cd .. && \
+    rm -rf yaml-cpp-0.6.3.tar.gz yaml-cpp-yaml-cpp-0.6.3
+
+# gflags-2.2.2
+RUN wget https://github.com/gflags/gflags/archive/refs/tags/v2.2.2.tar.gz && \
+    mkdir gflags-2.2.2 && \
+    tar -zxvf v2.2.2.tar.gz -C gflags-2.2.2 --strip-components=1 && \
+    cd gflags-2.2.2 && \
+    mkdir build && cd build && \
+    cmake .. -DCMAKE_POSITION_INDEPENDENT_CODE=ON && \
+    make -j$(nproc) && \
+    make install && \
+    cd .. && \
+    rm -rf v2.2.2.tar.gz gflags-2.2.2
+
+# glog-0.6.0
+RUN mkdir glog-0.6.0 && cd glog-0.6.0 &&\
+    wget https://github.com/google/glog/archive/refs/tags/v0.6.0.tar.gz && \
+    tar -zxvf v0.6.0.tar.gz --strip-components=1 && \
+    ls -la && \
+    mkdir build && \
+    cmake -S . -B build && \
+    cmake --build build && \
+    cmake --build build --target install && \
+    rm -rf v0.6.0.tar.gz && \
+    cd .. && \
+    rm -rf glog-0.6.0
+
+# ceres-2.1.0
+RUN git clone --branch 2.1.0 --single-branch --recurse-submodules https://github.com/ceres-solver/ceres-solver && \
+    cd ceres-solver && \
+    mkdir build && cd build && \
+    cmake .. && \
+    make -j$(nproc) && \
+    make install && \
+    cd .. && \
+    rm -rf ceres-solver
+
+# gici-open
+WORKDIR /home
+RUN git clone https://github.com/sauravuprety21/gici-open.git && \
+    cd gici-open && \
+    mkdir build && \
+    cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make -j$(nproc)
+
+WORKDIR /home/gici-open/tools/edit_binary/generate_replay_tag
+RUN mkdir build && \
+    cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make -j$(nproc)
+
+WORKDIR /home/gici-open/tools/evaluation/alignment
+RUN mkdir build && \
+    cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make -j$(nproc)
+
+WORKDIR /home/gici-open/tools/evaluation/format_converters
+RUN mkdir build && \
+    cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release && \
+    make -j$(nproc)
+
+WORKDIR /home/gici-open/ros_wrapper
+RUN bash -c "source /opt/ros/noetic/setup.bash && catkin_make -DCMAKE_BUILD_TYPE=Release"
+
+WORKDIR /home/gici-open/tools/ros
+RUN bash -c "source /opt/ros/noetic/setup.bash && catkin_make -DCMAKE_BUILD_TYPE=Release"
+
+ARG HOST_UID=1000
+ARG HOST_GID=1000
+ARG USERNAME=user
+
+# Add a group with the host's GID, if it doesn't already exist
+# Use || true to prevent failure if group already exists (e.g., GID 1000 for 'users' on some base images)
+RUN getent group "${HOST_GID}" >/dev/null || groupadd -g "${HOST_GID}" "${USERNAME}"
+# Create a user with the host's UID and add to the group
+# -m: creates a home directory /home/${USERNAME}
+# -s /bin/bash: sets bash as default shell
+RUN useradd -m -s /bin/bash -u "${HOST_UID}" -g "${USERNAME}" "${USERNAME}"
+
+RUN echo "source /opt/ros/noetic/setup.bash" >> /home/${USERNAME}/.bashrc && \
+    echo "source /home/gici-open/ros_wrapper/devel/setup.bash" >> /home/${USERNAME}/.bashrc && \
+    chown ${USERNAME}:${USERNAME} /home/${USERNAME}/.bashrc
+
+RUN chown -R ${USERNAME}:${USERNAME} /home
+
+WORKDIR /home
+
+# docker build --build-arg HOST_UID=$(id -u) --build-arg HOST_GID=$(id -g) -f dockers/intelgpu.DockerFile -t zoroob/ros:gici .
