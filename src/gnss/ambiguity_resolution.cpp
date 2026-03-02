@@ -869,12 +869,14 @@ double AmbiguityResolution::computeRangeCost(const BackendId& epoch_id)
   for (size_t i = 0; i < residual_blocks.size(); i++) {
     auto& residual_block = residual_blocks[i];
     ErrorType type = residual_block.error_interface_ptr->typeInfo();
-    if (!(type == ErrorType::kPseudorangeError || 
-          type == ErrorType::kPseudorangeErrorSD || 
+    if (!(type == ErrorType::kPseudorangeError ||
+          type == ErrorType::kPseudorangeErrorSD ||
           type == ErrorType::kPseudorangeErrorDD ||
-          type == ErrorType::kPhaserangeError || 
-          type == ErrorType::kPhaserangeErrorSD || 
-          type == ErrorType::kPhaserangeErrorDD)) continue;
+          type == ErrorType::kMultiPseudorangesErrorDD ||
+          type == ErrorType::kPhaserangeError ||
+          type == ErrorType::kPhaserangeErrorSD ||
+          type == ErrorType::kPhaserangeErrorDD))
+      continue;
     double residual[1];
     graph_->problem()->EvaluateResidualBlock(residual_block.residual_block_id, 
       false, nullptr, residual, nullptr);

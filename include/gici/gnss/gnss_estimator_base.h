@@ -228,6 +228,13 @@ protected:
     int& num_valid_satellite,
     bool use_single_frequency = false);
 
+  // Add multiple double-differenced pseudorange residual block to graph
+  void addMultiDdPseudorangesResidualBlocks(
+      const GnssMeasurement &measurement_rov,
+      const GnssMeasurement &measurement_ref,
+      const GnssMeasurementDDIndexPairs &index_pairs, const State &state,
+      int &num_valid_satellite, bool use_single_frequency = false);
+
   // Add phaserange residual blocks to graph
   void addPhaserangeResidualBlocks(
     const GnssMeasurement& measurement,

@@ -1336,9 +1336,16 @@ size_t GnssEstimatorBase::numPseudorangeError(const State& state)
     auto& residual_block = residual_blocks[i];
     std::shared_ptr<ErrorInterface> interface = residual_block.error_interface_ptr;
     ErrorType type = interface->typeInfo();
-    if (!(type == ErrorType::kPseudorangeError || 
-          type == ErrorType::kPseudorangeErrorSD || 
-          type == ErrorType::kPseudorangeErrorDD)) continue;
+
+    if (type == ErrorType::kMultiPseudorangesErrorDD) {
+      num += interface->residualDim();
+      continue;
+    }
+
+    if (!(type == ErrorType::kPseudorangeError ||
+          type == ErrorType::kPseudorangeErrorSD ||
+          type == ErrorType::kPseudorangeErrorDD))
+      continue;
     num++;
   }
   return num;
@@ -2159,13 +2166,14 @@ void GnssEstimatorBase::addAmbiguityMarginBlocksWithResiduals(
 void GnssEstimatorBase::addGnssMeasurementResidualMarginBlocks(const State& state)
 {
   const std::unordered_set<int> gnss_error_types = {
-    static_cast<int>(ErrorType::kPseudorangeError),
-    static_cast<int>(ErrorType::kPseudorangeErrorSD),
-    static_cast<int>(ErrorType::kPseudorangeErrorDD),
-    static_cast<int>(ErrorType::kPhaserangeError),
-    static_cast<int>(ErrorType::kPhaserangeErrorSD),
-    static_cast<int>(ErrorType::kPhaserangeErrorDD),
-    static_cast<int>(ErrorType::kDopplerError)};
+      static_cast<int>(ErrorType::kPseudorangeError),
+      static_cast<int>(ErrorType::kPseudorangeErrorSD),
+      static_cast<int>(ErrorType::kPseudorangeErrorDD),
+      static_cast<int>(ErrorType::kMultiPseudorangesErrorDD),
+      static_cast<int>(ErrorType::kPhaserangeError),
+      static_cast<int>(ErrorType::kPhaserangeErrorSD),
+      static_cast<int>(ErrorType::kPhaserangeErrorDD),
+      static_cast<int>(ErrorType::kDopplerError)};
 
   CHECK(graph_->parameterBlockExists(state.id_in_graph.asInteger()));
   Graph::ResidualBlockCollection residuals = 
@@ -2184,24 +2192,25 @@ void GnssEstimatorBase::addGnssResidualMarginBlocks(const State& state)
   CHECK(graph_->parameterBlockExists(state.id_in_graph.asInteger()));
 
   const std::unordered_set<int> gnss_error_types = {
-    static_cast<int>(ErrorType::kPseudorangeError),
-    static_cast<int>(ErrorType::kPseudorangeErrorSD),
-    static_cast<int>(ErrorType::kPseudorangeErrorDD),
-    static_cast<int>(ErrorType::kPhaserangeError),
-    static_cast<int>(ErrorType::kPhaserangeErrorSD),
-    static_cast<int>(ErrorType::kPhaserangeErrorDD),
-    static_cast<int>(ErrorType::kDopplerError),
-    static_cast<int>(ErrorType::kAmbiguityError),
-    static_cast<int>(ErrorType::kClockError),
-    static_cast<int>(ErrorType::kFrequencyError),
-    static_cast<int>(ErrorType::kTroposphereError),
-    static_cast<int>(ErrorType::kIonosphereError),
-    static_cast<int>(ErrorType::kRelativePositionAndVelocityError),
-    static_cast<int>(ErrorType::kRelativePositionError),
-    static_cast<int>(ErrorType::kRelativeFrequencyError),
-    static_cast<int>(ErrorType::kRelativeTroposphereError),
-    static_cast<int>(ErrorType::kRelativeIonosphereError),
-    static_cast<int>(ErrorType::kRelativeAmbiguityError) };
+      static_cast<int>(ErrorType::kPseudorangeError),
+      static_cast<int>(ErrorType::kPseudorangeErrorSD),
+      static_cast<int>(ErrorType::kPseudorangeErrorDD),
+      static_cast<int>(ErrorType::kMultiPseudorangesErrorDD),
+      static_cast<int>(ErrorType::kPhaserangeError),
+      static_cast<int>(ErrorType::kPhaserangeErrorSD),
+      static_cast<int>(ErrorType::kPhaserangeErrorDD),
+      static_cast<int>(ErrorType::kDopplerError),
+      static_cast<int>(ErrorType::kAmbiguityError),
+      static_cast<int>(ErrorType::kClockError),
+      static_cast<int>(ErrorType::kFrequencyError),
+      static_cast<int>(ErrorType::kTroposphereError),
+      static_cast<int>(ErrorType::kIonosphereError),
+      static_cast<int>(ErrorType::kRelativePositionAndVelocityError),
+      static_cast<int>(ErrorType::kRelativePositionError),
+      static_cast<int>(ErrorType::kRelativeFrequencyError),
+      static_cast<int>(ErrorType::kRelativeTroposphereError),
+      static_cast<int>(ErrorType::kRelativeIonosphereError),
+      static_cast<int>(ErrorType::kRelativeAmbiguityError)};
 
   Graph::ResidualBlockCollection residuals = 
     graph_->residuals(state.id_in_graph.asInteger());
@@ -2460,12 +2469,14 @@ void GnssEstimatorBase::erasePseudorangeResidualBlocks(const State& state)
   Graph::ResidualBlockCollection residual_blocks = 
     graph_->residuals(parameter_id.asInteger());
   for (auto residual_block : residual_blocks) {
-    if (residual_block.error_interface_ptr->typeInfo() == 
-        ErrorType::kPseudorangeError || 
-        residual_block.error_interface_ptr->typeInfo() == 
-        ErrorType::kPseudorangeErrorSD || 
-        residual_block.error_interface_ptr->typeInfo() == 
-        ErrorType::kPseudorangeErrorDD) {
+    if (residual_block.error_interface_ptr->typeInfo() ==
+            ErrorType::kPseudorangeError ||
+        residual_block.error_interface_ptr->typeInfo() ==
+            ErrorType::kPseudorangeErrorSD ||
+        residual_block.error_interface_ptr->typeInfo() ==
+            ErrorType::kPseudorangeErrorDD ||
+        residual_block.error_interface_ptr->typeInfo() ==
+            ErrorType::kMultiPseudorangesErrorDD) {
       graph_->removeResidualBlock(residual_block.residual_block_id);
     }
   }
@@ -2475,13 +2486,14 @@ void GnssEstimatorBase::erasePseudorangeResidualBlocks(const State& state)
 void GnssEstimatorBase::eraseGnssMeasurementResidualBlocks(const State& state)
 {
   const std::unordered_set<int> gnss_error_types = {
-    static_cast<int>(ErrorType::kPseudorangeError),
-    static_cast<int>(ErrorType::kPseudorangeErrorSD),
-    static_cast<int>(ErrorType::kPseudorangeErrorDD),
-    static_cast<int>(ErrorType::kPhaserangeError),
-    static_cast<int>(ErrorType::kPhaserangeErrorSD),
-    static_cast<int>(ErrorType::kPhaserangeErrorDD),
-    static_cast<int>(ErrorType::kDopplerError)};
+      static_cast<int>(ErrorType::kPseudorangeError),
+      static_cast<int>(ErrorType::kPseudorangeErrorSD),
+      static_cast<int>(ErrorType::kPseudorangeErrorDD),
+      static_cast<int>(ErrorType::kMultiPseudorangesErrorDD),
+      static_cast<int>(ErrorType::kPhaserangeError),
+      static_cast<int>(ErrorType::kPhaserangeErrorSD),
+      static_cast<int>(ErrorType::kPhaserangeErrorDD),
+      static_cast<int>(ErrorType::kDopplerError)};
 
   const BackendId& parameter_id = state.id;
 

@@ -93,8 +93,8 @@ bool DgnssEstimator::addGnssMeasurementAndState(
   
   // Add pseudorange residual blocks
   int num_valid_satellite = 0;
-  addDdPseudorangeResidualBlocks(curGnssRov(), curGnssRef(), 
-    index_pairs, curState(), num_valid_satellite);
+  addMultiDdPseudorangesResidualBlocks(curGnssRov(), curGnssRef(), index_pairs,
+                                       curState(), num_valid_satellite);
 
   // Check if insufficient satellites
   if (!checkSufficientSatellite(num_valid_satellite, 0)) {

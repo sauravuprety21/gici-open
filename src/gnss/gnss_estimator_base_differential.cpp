@@ -6,14 +6,17 @@
 *
 * Copyright (C) 2023 by Cheng Chi, All rights reserved.
 **/
+#include <set>
+
 #include "gici/gnss/gnss_estimator_base.h"
 
-#include "gici/gnss/gnss_parameter_blocks.h"
 #include "gici/gnss/gnss_const_errors.h"
-#include "gici/gnss/pseudorange_error_sd.h"
+#include "gici/gnss/gnss_parameter_blocks.h"
+#include "gici/gnss/multi_pseudoranges_err_dd.h"
+#include "gici/gnss/phaserange_error_dd.h"
 #include "gici/gnss/phaserange_error_sd.h"
 #include "gici/gnss/pseudorange_error_dd.h"
-#include "gici/gnss/phaserange_error_dd.h"
+#include "gici/gnss/pseudorange_error_sd.h"
 
 namespace gici {
 
@@ -337,6 +340,114 @@ void GnssEstimatorBase::addDdPseudorangeResidualBlocks(
   // Precise mode.
   else 
   {
+    LOG(FATAL) << "Not supported yet!";
+  }
+}
+
+// Add double-differenced pseudorange residual block to graph
+void GnssEstimatorBase::addMultiDdPseudorangesResidualBlocks(
+    const GnssMeasurement &measurement_rov,
+    const GnssMeasurement &measurement_ref,
+    const GnssMeasurementDDIndexPairs &index_pairs, const State &state,
+    int &num_valid_satellite, bool use_single_frequency) {
+
+  CHECK(!(use_single_frequency && is_verbose_model_));
+  num_valid_satellite = 0;
+  const BackendId parameter_id = state.id;
+
+  // Normal mode.
+  if (!is_verbose_model_) {
+
+    std::unordered_map<std::string, int> num_code_used;
+    std::unordered_map<char, int> num_system_used;
+
+    // For each unique base satellite index pair
+    // (system and code combination from rover and base)
+    // a residual block is added
+    std::set<GnssMeasurementsIndexRawPair> index_raw_pairs_base_sats;
+
+    for (const auto &index_pair : index_pairs) {
+      index_raw_pairs_base_sats.insert(
+          std::make_pair(std::make_pair(index_pair.rov_base.prn,
+                                        index_pair.rov_base.code_type),
+                         std::make_pair(index_pair.ref_base.prn,
+                                        index_pair.ref_base.code_type)));
+    }
+
+    for (const auto &index_raw_pair : index_raw_pairs_base_sats) {
+      // Index pairs seperated by systems and also code
+      GnssMeasurementDDIndexPairs index_pairs_system_code;
+      GnssMeasurementIndex index_rov_base(index_raw_pair.first.first,
+                                          index_raw_pair.first.second);
+
+      GnssMeasurementIndex index_ref_base(index_raw_pair.second.first,
+                                          index_raw_pair.second.second);
+
+      if (!(index_rov_base == index_ref_base))
+        continue;
+
+      char system_base = index_raw_pair.first.first[0];
+      int code_type_base = index_raw_pair.first.second;
+      
+      for (auto &index_pair : index_pairs) {
+        const GnssMeasurementIndex &index = index_pair.rov;
+        const GnssMeasurementIndex &index_ref = index_pair.ref;
+
+        const Satellite &satellite = measurement_rov.getSat(index);
+        char system = satellite.getSystem();
+        std::string prn = satellite.prn;
+        int code_type = index.code_type;
+
+        if (!(system == system_base) || !(code_type == code_type_base))
+          continue;
+
+        if (num_code_used.find(prn) == num_code_used.end()) {
+          num_code_used.insert(std::make_pair(prn, 0));
+        }
+        if (num_system_used.find(system) == num_system_used.end()) {
+          num_system_used.insert(std::make_pair(system, 0));
+        }
+        if (use_single_frequency && num_code_used.at(prn) > 0)
+          continue;
+
+        index_pairs_system_code.push_back(index_pair);
+
+        num_code_used.at(prn)++;
+        num_system_used.at(system)++;
+      }
+      // position in ECEF for standalone
+      if (parameter_id.type() == IdType::gPosition) {
+        is_state_pose_ = false;
+        std::shared_ptr<MultiPseudorangesErrorDD<3>> pseudorange_error =
+            std::make_shared<MultiPseudorangesErrorDD<3>>(
+                measurement_rov, measurement_ref, index_pairs, index_rov_base,
+                index_ref_base, gnss_base_options_.error_parameter);
+        graph_->addResidualBlock(
+            pseudorange_error,
+            huber_loss_function_ ? huber_loss_function_.get() : nullptr,
+            graph_->parameterBlockPtr(parameter_id.asInteger()));
+      }
+      // pose in ENU for fusion
+      else {
+        is_state_pose_ = true;
+        BackendId pose_id = state.id_in_graph;
+        std::shared_ptr<MultiPseudorangesErrorDD<7, 3>> pseudorange_error =
+            std::make_shared<MultiPseudorangesErrorDD<7, 3>>(
+                measurement_rov, measurement_ref, index_pairs, index_rov_base,
+                index_ref_base, gnss_base_options_.error_parameter);
+        pseudorange_error->setCoordinate(coordinate_);
+        graph_->addResidualBlock(
+            pseudorange_error,
+            huber_loss_function_ ? huber_loss_function_.get() : nullptr,
+            graph_->parameterBlockPtr(pose_id.asInteger()),
+            graph_->parameterBlockPtr(gnss_extrinsics_id_.asInteger()));
+      }
+    }
+
+    num_valid_satellite = num_code_used.size() + num_system_used.size();
+  }
+  // Precise mode.
+  else {
     LOG(FATAL) << "Not supported yet!";
   }
 }

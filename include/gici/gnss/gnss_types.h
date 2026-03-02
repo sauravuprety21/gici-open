@@ -8,13 +8,15 @@
 **/
 #pragma once
 
-#include <iostream>
-#include <vector>
-#include <unordered_map>
-#include <map>
-#include <memory>
 #include <Eigen/Core>
 #include <glog/logging.h>
+#include <iostream>
+#include <map>
+#include <memory>
+#include <set>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "gici/gnss/code_bias.h"
 #include "gici/gnss/phase_bias.h"
@@ -107,12 +109,16 @@ struct GnssMeasurementIndex {
   std::string prn;
   int code_type;
 
-  inline bool operator==(const GnssMeasurementIndex index) {
+  inline bool operator==(const GnssMeasurementIndex &index) {
     if (index.code_type != code_type) return false;
     if (index.prn != prn) return false;
     return true;
   }
 };
+
+using GnssMeasurementIndexRaw = std::pair<std::string, int>;
+using GnssMeasurementsIndexRawPair =
+    std::pair<GnssMeasurementIndexRaw, GnssMeasurementIndexRaw>;
 
 // Pairs
 // single difference pair

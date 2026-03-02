@@ -46,8 +46,7 @@
 
 namespace gici {
 
-enum class ErrorType: uint8_t
-{
+enum class ErrorType : uint8_t {
   kHomogeneousPointError,
   kReprojectionError,
   kSpeedAndBiasError,
@@ -58,9 +57,10 @@ enum class ErrorType: uint8_t
   kNHCError,
   kRelativePoseError,
   kPseudorangeError,
-  kPseudorangeErrorSD, 
+  kPseudorangeErrorSD,
   kPseudorangeErrorDD,
-  kPhaserangeError, 
+  kMultiPseudorangesErrorDD,
+  kPhaserangeError,
   kPhaserangeErrorSD,
   kPhaserangeErrorDD,
   kDopplerError,
@@ -72,7 +72,7 @@ enum class ErrorType: uint8_t
   kFrequencyError,
   kTroposphereError,
   kIonosphereError,
-  kRelativePositionError, 
+  kRelativePositionError,
   kRelativePositionAndVelocityError,
   kRelativeClockError,
   kRelativeFrequencyError,
