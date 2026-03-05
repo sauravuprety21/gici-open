@@ -59,6 +59,7 @@ enum class ErrorType : uint8_t {
   kPseudorangeError,
   kPseudorangeErrorSD,
   kPseudorangeErrorDD,
+  kMultiPseudorangesError,
   kMultiPseudorangesErrorDD,
   kPhaserangeError,
   kPhaserangeErrorSD,

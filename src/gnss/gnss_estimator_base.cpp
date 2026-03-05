@@ -12,6 +12,7 @@
 #include "gici/gnss/gnss_const_errors.h"
 #include "gici/gnss/pseudorange_error.h"
 #include "gici/gnss/phaserange_error.h"
+#include "gici/gnss/multi_pseudoranges_err.h"
 #include "gici/gnss/doppler_error.h"
 #include "gici/gnss/gnss_relative_errors.h"
 #include "gici/gnss/relative_isb_error.h"
@@ -885,6 +886,115 @@ void GnssEstimatorBase::addPseudorangeResidualBlocks(
   }
 }
 
+// Add pseudorange residual blocks to graph
+void GnssEstimatorBase::addMultiPseudorangesResidualBlocks(
+    const GnssMeasurement &measurement, const State &state,
+    int &num_valid_satellite, bool use_single_frequency) {
+
+  CHECK(!(use_single_frequency && is_verbose_model_));
+  num_valid_satellite = 0;
+  const BackendId parameter_id = state.id;
+  std::set<std::string> prns_used;
+
+  // Normal mode.
+  if (!is_verbose_model_) {
+    // For each unique satellite index pair
+    // (system and code combination from rover and base)
+    // a residual block is added
+    std::set<std::pair<char, int>> sys_code_pairs;
+
+    for (const auto &sat : measurement.satellites) {
+      const Satellite &satellite = sat.second;
+      char system = satellite.getSystem();
+      if (!gnss_common::useSystem(gnss_base_options_.common, system) ||
+          !gnss_common::useSatellite(gnss_base_options_.common, satellite.prn))
+        continue;
+
+      for (const auto &obs : satellite.observations) {
+        sys_code_pairs.insert(std::make_pair(system, obs.first));
+      }
+    }
+
+    for (const auto &sys_code : sys_code_pairs) {
+      char curr_system = sys_code.first;
+      int curr_code = sys_code.second;
+      GnssMeasurementsIndexes curr_indexes;
+
+      for (const auto &sat : measurement.satellites) {
+        const Satellite &satellite = sat.second;
+        if (satellite.getSystem() != curr_system)
+          continue;
+        if (satellite.ionosphere_type == IonoType::None)
+          continue;
+        char system = satellite.getSystem();
+        for (const auto &obs : satellite.observations) {
+          if (obs.first != curr_code)
+            continue;
+          if (!checkObservationValid(
+                  measurement, GnssMeasurementIndex(satellite.prn, obs.first)))
+            continue;
+          // check single frequency is system base frequency
+          if (use_single_frequency) {
+            CodeBias::BaseFrequencies bases = measurement.code_bias->getBase();
+            std::pair<int, int> base_pair = bases.at(system);
+            if (system == 'C')
+              base_pair.first = CODE_L2I; // use B1I for BDS
+            int phase_id_base =
+                gnss_common::getPhaseID(system, base_pair.first);
+            int phase_id = gnss_common::getPhaseID(system, obs.first);
+            if (phase_id_base != phase_id)
+              continue;
+          }
+          curr_indexes.push_back(
+              GnssMeasurementIndex(satellite.prn, obs.first));
+          prns_used.insert(satellite.prn);
+        }
+      }
+
+      if (curr_indexes.size() > 0) {
+        BackendId clock_id = createGnssClockId(curr_system, measurement.id);
+        // position in ECEF for standalone
+        ceres::ResidualBlockId residual_id;
+
+        // position in ECEF for standalone
+        if (parameter_id.type() == IdType::gPosition) {
+          is_state_pose_ = false;
+          std::shared_ptr<MultiPseudorangesError<3, 1>> pseudorange_error =
+              std::make_shared<MultiPseudorangesError<3, 1>>(
+                  measurement, curr_indexes,
+                  gnss_base_options_.error_parameter);
+          residual_id = graph_->addResidualBlock(
+              pseudorange_error,
+              huber_loss_function_ ? huber_loss_function_.get() : nullptr,
+              graph_->parameterBlockPtr(parameter_id.asInteger()),
+              graph_->parameterBlockPtr(clock_id.asInteger()));
+        }
+        // pose in ENU for fusion
+        else {
+          is_state_pose_ = true;
+          BackendId pose_id = state.id_in_graph;
+          std::shared_ptr<MultiPseudorangesError<7, 3, 1>> pseudorange_error =
+              std::make_shared<MultiPseudorangesError<7, 3, 1>>(
+                  measurement, curr_indexes,
+                  gnss_base_options_.error_parameter);
+          pseudorange_error->setCoordinate(coordinate_);
+          residual_id = graph_->addResidualBlock(
+              pseudorange_error,
+              huber_loss_function_ ? huber_loss_function_.get() : nullptr,
+              graph_->parameterBlockPtr(pose_id.asInteger()),
+              graph_->parameterBlockPtr(gnss_extrinsics_id_.asInteger()),
+              graph_->parameterBlockPtr(clock_id.asInteger()));
+        }
+      }
+    }
+  }
+  // Precise mode.
+  else {
+    LOG(FATAL) << "Not supported yet!";
+  }
+  num_valid_satellite = prns_used.size();
+}
+
 // Add phaserange residual blocks to graph
 void GnssEstimatorBase::addPhaserangeResidualBlocks(
   const GnssMeasurement& measurement,
@@ -1337,7 +1447,8 @@ size_t GnssEstimatorBase::numPseudorangeError(const State& state)
     std::shared_ptr<ErrorInterface> interface = residual_block.error_interface_ptr;
     ErrorType type = interface->typeInfo();
 
-    if (type == ErrorType::kMultiPseudorangesErrorDD) {
+    if (type == ErrorType::kMultiPseudorangesError ||
+        type == ErrorType::kMultiPseudorangesErrorDD) {
       num += interface->residualDim();
       continue;
     }
@@ -2169,6 +2280,7 @@ void GnssEstimatorBase::addGnssMeasurementResidualMarginBlocks(const State& stat
       static_cast<int>(ErrorType::kPseudorangeError),
       static_cast<int>(ErrorType::kPseudorangeErrorSD),
       static_cast<int>(ErrorType::kPseudorangeErrorDD),
+      static_cast<int>(ErrorType::kMultiPseudorangesError),
       static_cast<int>(ErrorType::kMultiPseudorangesErrorDD),
       static_cast<int>(ErrorType::kPhaserangeError),
       static_cast<int>(ErrorType::kPhaserangeErrorSD),
@@ -2476,6 +2588,8 @@ void GnssEstimatorBase::erasePseudorangeResidualBlocks(const State& state)
         residual_block.error_interface_ptr->typeInfo() ==
             ErrorType::kPseudorangeErrorDD ||
         residual_block.error_interface_ptr->typeInfo() ==
+            ErrorType::kMultiPseudorangesError ||
+        residual_block.error_interface_ptr->typeInfo() ==
             ErrorType::kMultiPseudorangesErrorDD) {
       graph_->removeResidualBlock(residual_block.residual_block_id);
     }
@@ -2489,6 +2603,7 @@ void GnssEstimatorBase::eraseGnssMeasurementResidualBlocks(const State& state)
       static_cast<int>(ErrorType::kPseudorangeError),
       static_cast<int>(ErrorType::kPseudorangeErrorSD),
       static_cast<int>(ErrorType::kPseudorangeErrorDD),
+      static_cast<int>(ErrorType::kMultiPseudorangesError),
       static_cast<int>(ErrorType::kMultiPseudorangesErrorDD),
       static_cast<int>(ErrorType::kPhaserangeError),
       static_cast<int>(ErrorType::kPhaserangeErrorSD),

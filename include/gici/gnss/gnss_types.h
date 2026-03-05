@@ -116,6 +116,7 @@ struct GnssMeasurementIndex {
   }
 };
 
+using GnssMeasurementsIndexes = std::vector<GnssMeasurementIndex>;
 using GnssMeasurementIndexRaw = std::pair<std::string, int>;
 using GnssMeasurementsIndexRawPair =
     std::pair<GnssMeasurementIndexRaw, GnssMeasurementIndexRaw>;

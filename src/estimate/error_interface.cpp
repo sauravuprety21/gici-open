@@ -17,6 +17,7 @@ const std::map<ErrorType, std::string> kErrorToStr{
     {ErrorType::kPseudorangeError, std::string("PseudorangeError")},
     {ErrorType::kPseudorangeErrorSD, std::string("PseudorangeErrorSD")},
     {ErrorType::kPseudorangeErrorDD, std::string("PseudorangeErrorDD")},
+    {ErrorType::kMultiPseudorangesError, std::string("MultiPseudorangesError")},
     {ErrorType::kMultiPseudorangesErrorDD,
      std::string("MultiPseudorangesErrorDD")},
     {ErrorType::kPhaserangeError, std::string("PhaserangeError")},

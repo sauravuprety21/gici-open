@@ -130,11 +130,12 @@ bool SppEstimator::addGnssMeasurementAndState(
   
   // Add pseudorange residual blocks
   int num_valid_satellite = 0;
-  addPseudorangeResidualBlocks(
-    curGnss(), curState(), num_valid_satellite, !spp_options_.use_dual_frequency);
-
-  // Check if insufficient satellites
-  if (!checkSufficientSatellite(num_valid_satellite, num_valid_system)) {
+  // addPseudorangeResidualBlocks(
+  //   curGnss(), curState(), num_valid_satellite, !spp_options_.use_dual_frequency);
+  addMultiPseudorangesResidualBlocks(curGnss(), curState(), num_valid_satellite,
+                                     !spp_options_.use_dual_frequency);
+      // Check if insufficient satellites
+      if (!checkSufficientSatellite(num_valid_satellite, num_valid_system)) {
     return false;
   }
 

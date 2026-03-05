@@ -872,6 +872,7 @@ double AmbiguityResolution::computeRangeCost(const BackendId& epoch_id)
     if (!(type == ErrorType::kPseudorangeError ||
           type == ErrorType::kPseudorangeErrorSD ||
           type == ErrorType::kPseudorangeErrorDD ||
+          type == ErrorType::kMultiPseudorangesError ||
           type == ErrorType::kMultiPseudorangesErrorDD ||
           type == ErrorType::kPhaserangeError ||
           type == ErrorType::kPhaserangeErrorSD ||
