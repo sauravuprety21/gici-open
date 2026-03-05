@@ -166,7 +166,7 @@ bool MultiPseudorangesErrorDD<Ns...>::EvaluateWithMinimalJacobians(
   Eigen::Matrix<double, 6, 7, Eigen::RowMajor> J_lift =
       Eigen::Matrix<double, 6, 7, Eigen::RowMajor>::Zero();
 
-  Eigen::VectorXd vResiduals = Eigen::VectorXd::Zero(num_residuals());
+  Eigen::VectorXd Residuals = Eigen::VectorXd::Zero(num_residuals());
 
   double rho_rov_base = gnss_common::satelliteToReceiverDistance(
       satellite_rov_base_.sat_position, t_WR_ECEF);
@@ -197,7 +197,7 @@ bool MultiPseudorangesErrorDD<Ns...>::EvaluateWithMinimalJacobians(
         observation_rov.pseudorange - observation_ref.pseudorange -
         observation_rov_base_.pseudorange + observation_ref_base_.pseudorange;
 
-    vResiduals(i) = dpseudorange - dpseudorange_estimate;
+    Residuals(i) = dpseudorange - dpseudorange_estimate;
 
     if (jacobians != nullptr) {
       // Receiver position in ECEF
@@ -232,7 +232,7 @@ bool MultiPseudorangesErrorDD<Ns...>::EvaluateWithMinimalJacobians(
   Eigen::Map<Eigen::VectorXd> weighted_residuals(residuals, num_residuals());
   weighted_residuals =
       whitening_cholesky_factor_.triangularView<Eigen::Lower>().solve(
-          vResiduals);
+          Residuals);
 
   // Group 1
   if (parameter_block_group_ == 1) {
