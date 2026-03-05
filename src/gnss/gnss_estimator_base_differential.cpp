@@ -354,27 +354,27 @@ void GnssEstimatorBase::addMultiDdPseudorangesResidualBlocks(
   CHECK(!(use_single_frequency && is_verbose_model_));
   num_valid_satellite = 0;
   const BackendId parameter_id = state.id;
+  std::set<std::string> prns_used;
 
   // Normal mode.
   if (!is_verbose_model_) {
 
     std::unordered_map<std::string, int> num_code_used;
-    std::unordered_map<char, int> num_system_used;
 
     // For each unique base satellite index pair
     // (system and code combination from rover and base)
     // a residual block is added
-    std::set<GnssMeasurementsIndexRawPair> index_raw_pairs_base_sats;
+    std::set<GnssMeasurementsIndexRawPair> index_pairs_raw_base;
 
     for (const auto &index_pair : index_pairs) {
-      index_raw_pairs_base_sats.insert(
+      index_pairs_raw_base.insert(
           std::make_pair(std::make_pair(index_pair.rov_base.prn,
                                         index_pair.rov_base.code_type),
                          std::make_pair(index_pair.ref_base.prn,
                                         index_pair.ref_base.code_type)));
     }
 
-    for (const auto &index_raw_pair : index_raw_pairs_base_sats) {
+    for (const auto &index_raw_pair : index_pairs_raw_base) {
       // Index pairs seperated by systems and also code
       GnssMeasurementDDIndexPairs index_pairs_system_code;
       GnssMeasurementIndex index_rov_base(index_raw_pair.first.first,
@@ -404,16 +404,12 @@ void GnssEstimatorBase::addMultiDdPseudorangesResidualBlocks(
         if (num_code_used.find(prn) == num_code_used.end()) {
           num_code_used.insert(std::make_pair(prn, 0));
         }
-        if (num_system_used.find(system) == num_system_used.end()) {
-          num_system_used.insert(std::make_pair(system, 0));
-        }
         if (use_single_frequency && num_code_used.at(prn) > 0)
           continue;
 
         index_pairs_system_code.push_back(index_pair);
-
-        num_code_used.at(prn)++;
-        num_system_used.at(system)++;
+        prns_used.insert(prn);
+        prns_used.insert(index_raw_pair.first.first);
       }
       // position in ECEF for standalone
       if (parameter_id.type() == IdType::gPosition) {
@@ -443,13 +439,12 @@ void GnssEstimatorBase::addMultiDdPseudorangesResidualBlocks(
             graph_->parameterBlockPtr(gnss_extrinsics_id_.asInteger()));
       }
     }
-
-    num_valid_satellite = num_code_used.size() + num_system_used.size();
   }
   // Precise mode.
   else {
     LOG(FATAL) << "Not supported yet!";
   }
+  num_valid_satellite = prns_used.size();
 }
 
 // Add double-differenced phaserange residual blocks to graph
