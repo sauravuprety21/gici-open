@@ -359,84 +359,105 @@ void GnssEstimatorBase::addMultiDdPseudorangesResidualBlocks(
   // Normal mode.
   if (!is_verbose_model_) {
 
-    std::unordered_map<std::string, int> num_code_used;
-
-    // For each unique base satellite index pair
+    // For each unique satellite index pair
     // (system and code combination from rover and base)
     // a residual block is added
-    std::set<GnssMeasurementsIndexRawPair> index_pairs_raw_base;
+    std::set<std::pair<char, int>> sys_code_pairs;
 
-    for (const auto &index_pair : index_pairs) {
-      index_pairs_raw_base.insert(
-          std::make_pair(std::make_pair(index_pair.rov_base.prn,
-                                        index_pair.rov_base.code_type),
-                         std::make_pair(index_pair.ref_base.prn,
-                                        index_pair.ref_base.code_type)));
-    }
-
-    for (const auto &index_raw_pair : index_pairs_raw_base) {
-      // Index pairs seperated by systems and also code
-      GnssMeasurementDDIndexPairs index_pairs_system_code;
-      GnssMeasurementIndex index_rov_base(index_raw_pair.first.first,
-                                          index_raw_pair.first.second);
-
-      GnssMeasurementIndex index_ref_base(index_raw_pair.second.first,
-                                          index_raw_pair.second.second);
-
-      if (!(index_rov_base == index_ref_base))
+    for (const auto &sat : measurement_rov.satellites) {
+      const Satellite &satellite = sat.second;
+      char system = satellite.getSystem();
+      if (!gnss_common::useSystem(gnss_base_options_.common, system) ||
+          !gnss_common::useSatellite(gnss_base_options_.common, satellite.prn))
         continue;
 
-      char system_base = index_raw_pair.first.first[0];
-      int code_type_base = index_raw_pair.first.second;
-      
-      for (auto &index_pair : index_pairs) {
-        const GnssMeasurementIndex &index = index_pair.rov;
-        const GnssMeasurementIndex &index_ref = index_pair.ref;
+      for (const auto &obs : satellite.observations) {
+        sys_code_pairs.insert(std::make_pair(system, obs.first));
+      }
+    }
 
-        const Satellite &satellite = measurement_rov.getSat(index);
-        char system = satellite.getSystem();
-        std::string prn = satellite.prn;
-        int code_type = index.code_type;
+    for (const auto &sat : measurement_ref.satellites) {
+      const Satellite &satellite = sat.second;
+      char system = satellite.getSystem();
+      if (!gnss_common::useSystem(gnss_base_options_.common, system) ||
+          !gnss_common::useSatellite(gnss_base_options_.common, satellite.prn))
+        continue;
 
-        if (!(system == system_base) || !(code_type == code_type_base))
+      for (const auto &obs : satellite.observations) {
+        sys_code_pairs.insert(std::make_pair(system, obs.first));
+      }
+    }
+
+    for (const auto &sys_code : sys_code_pairs) {
+      char curr_system = sys_code.first;
+      int curr_code = sys_code.second;
+      GnssMeasurementDDIndexPairs curr_index_pairs;
+      bool has_valid = false;
+
+      for (const auto &index_pair : index_pairs) {
+        const Satellite &satellite_rov = measurement_rov.getSat(index_pair.rov);
+        if (satellite_rov.getSystem() != curr_system)
           continue;
 
-        if (num_code_used.find(prn) == num_code_used.end()) {
-          num_code_used.insert(std::make_pair(prn, 0));
+        if (index_pair.rov.code_type != curr_code)
+          continue;
+
+        const Satellite &satellite_ref = measurement_ref.getSat(index_pair.ref);
+
+        if (satellite_rov.prn != satellite_ref.prn) {
+          LOG(INFO) << "Rov and ref prn mismatch " << satellite_rov.prn << ","
+                    << satellite_ref.prn;
+          continue;
         }
-        if (use_single_frequency && num_code_used.at(prn) > 0)
-          continue;
 
-        index_pairs_system_code.push_back(index_pair);
-        prns_used.insert(prn);
-        prns_used.insert(index_raw_pair.first.first);
+        if (index_pair.rov.code_type != index_pair.rov.code_type) {
+          LOG(INFO) << "Rov and ref obs code mismatch " << satellite_rov.prn
+                    << "," << satellite_ref.prn << "\t"
+                    << index_pair.rov.code_type << ","
+                    << index_pair.rov.code_type;
+          continue;
+        }
+
+        curr_index_pairs.push_back(index_pair);
+        prns_used.insert(satellite_rov.prn);
+        has_valid = true;
       }
-      // position in ECEF for standalone
-      if (parameter_id.type() == IdType::gPosition) {
-        is_state_pose_ = false;
-        std::shared_ptr<MultiPseudorangesErrorDD<3>> pseudorange_error =
-            std::make_shared<MultiPseudorangesErrorDD<3>>(
-                measurement_rov, measurement_ref, index_pairs, index_rov_base,
-                index_ref_base, gnss_base_options_.error_parameter);
-        graph_->addResidualBlock(
-            pseudorange_error,
-            huber_loss_function_ ? huber_loss_function_.get() : nullptr,
-            graph_->parameterBlockPtr(parameter_id.asInteger()));
-      }
-      // pose in ENU for fusion
-      else {
-        is_state_pose_ = true;
-        BackendId pose_id = state.id_in_graph;
-        std::shared_ptr<MultiPseudorangesErrorDD<7, 3>> pseudorange_error =
-            std::make_shared<MultiPseudorangesErrorDD<7, 3>>(
-                measurement_rov, measurement_ref, index_pairs, index_rov_base,
-                index_ref_base, gnss_base_options_.error_parameter);
-        pseudorange_error->setCoordinate(coordinate_);
-        graph_->addResidualBlock(
-            pseudorange_error,
-            huber_loss_function_ ? huber_loss_function_.get() : nullptr,
-            graph_->parameterBlockPtr(pose_id.asInteger()),
-            graph_->parameterBlockPtr(gnss_extrinsics_id_.asInteger()));
+      // Add for base satellite 
+      if (has_valid)
+        num_valid_satellite++;
+
+      if(curr_index_pairs.size() > 0){
+        // position in ECEF for standalone
+        if (parameter_id.type() == IdType::gPosition) {
+          is_state_pose_ = false;
+          std::shared_ptr<MultiPseudorangesErrorDD<3>> pseudorange_error =
+              std::make_shared<MultiPseudorangesErrorDD<3>>(
+                  measurement_rov, measurement_ref, curr_index_pairs,
+                  curr_index_pairs.back().rov_base,
+                  curr_index_pairs.back().ref_base,
+                  gnss_base_options_.error_parameter);
+          graph_->addResidualBlock(
+              pseudorange_error,
+              huber_loss_function_ ? huber_loss_function_.get() : nullptr,
+              graph_->parameterBlockPtr(parameter_id.asInteger()));
+        }
+        // pose in ENU for fusion
+        else {
+          is_state_pose_ = true;
+          BackendId pose_id = state.id_in_graph;
+          std::shared_ptr<MultiPseudorangesErrorDD<7, 3>> pseudorange_error =
+              std::make_shared<MultiPseudorangesErrorDD<7, 3>>(
+                  measurement_rov, measurement_ref, curr_index_pairs,
+                  curr_index_pairs.back().rov_base,
+                  curr_index_pairs.back().ref_base,
+                  gnss_base_options_.error_parameter);
+          pseudorange_error->setCoordinate(coordinate_);
+          graph_->addResidualBlock(
+              pseudorange_error,
+              huber_loss_function_ ? huber_loss_function_.get() : nullptr,
+              graph_->parameterBlockPtr(pose_id.asInteger()),
+              graph_->parameterBlockPtr(gnss_extrinsics_id_.asInteger()));
+        }
       }
     }
   }
@@ -444,7 +465,7 @@ void GnssEstimatorBase::addMultiDdPseudorangesResidualBlocks(
   else {
     LOG(FATAL) << "Not supported yet!";
   }
-  num_valid_satellite = prns_used.size();
+  num_valid_satellite += prns_used.size();
 }
 
 // Add double-differenced phaserange residual blocks to graph
