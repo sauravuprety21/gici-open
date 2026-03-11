@@ -203,8 +203,8 @@ bool MultiPseudorangesError<Ns ...>::EvaluateWithMinimalJacobians(
     double gmf_wet, gmf_hydro;
 
     const auto &index = indexes_[i];
-    Satellite satellite = measurement_.getSat(index);
-    Observation observation = measurement_.getObs(index);
+    const Satellite &satellite = measurement_.getSat(index);
+    const Observation &observation = measurement_.getObs(index);
 
     double rho = gnss_common::satelliteToReceiverDistance(
         satellite.sat_position, t_WR_ECEF);

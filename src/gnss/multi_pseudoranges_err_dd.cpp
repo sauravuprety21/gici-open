@@ -176,14 +176,14 @@ bool MultiPseudorangesErrorDD<Ns...>::EvaluateWithMinimalJacobians(
   for (size_t i = 0; i < num_residuals(); i++) {
     const auto &index_pair = index_pairs_[i];
 
-    Satellite satellite_rov, satellite_ref;
-    satellite_rov = measurement_rov_.getSat(index_pair.rov);
-    satellite_ref = measurement_ref_.getSat(index_pair.ref);
+    const Satellite &satellite_rov = measurement_rov_.getSat(index_pair.rov);
+    const Satellite &satellite_ref = measurement_ref_.getSat(index_pair.ref);
 
-    Observation observation_rov, observation_ref;
-    observation_rov = measurement_rov_.getObs(index_pair.rov);
-    observation_ref = measurement_ref_.getObs(index_pair.ref);
-
+    const Observation &observation_rov =
+        measurement_rov_.getObs(index_pair.rov);
+    const Observation &observation_ref =
+        measurement_ref_.getObs(index_pair.ref);
+        
     double rho_rov, rho_ref;
     rho_rov = gnss_common::satelliteToReceiverDistance(
         satellite_rov.sat_position, t_WR_ECEF);
