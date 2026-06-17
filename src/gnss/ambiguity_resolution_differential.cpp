@@ -69,7 +69,8 @@ AmbiguityResolution::Result AmbiguityResolution::solveRtk(
     for (size_t r = 0; r < residuals.size(); ++r) {
       if (residuals[r].error_interface_ptr->typeInfo() == ErrorType::kPhaserangeError ||
           residuals[r].error_interface_ptr->typeInfo() == ErrorType::kPhaserangeErrorSD ||
-          residuals[r].error_interface_ptr->typeInfo() == ErrorType::kPhaserangeErrorDD) {
+          residuals[r].error_interface_ptr->typeInfo() == ErrorType::kPhaserangeErrorDD ||
+          residuals[r].error_interface_ptr->typeInfo() == ErrorType::kMultiPhaserangesErrorDD) {
         num_phaserange_block++;
       }
     }
@@ -77,7 +78,8 @@ AmbiguityResolution::Result AmbiguityResolution::solveRtk(
     for (size_t r = 0; r < residuals.size(); ++r) {
       if (residuals[r].error_interface_ptr->typeInfo() == ErrorType::kPhaserangeError ||
           residuals[r].error_interface_ptr->typeInfo() == ErrorType::kPhaserangeErrorSD ||
-          residuals[r].error_interface_ptr->typeInfo() == ErrorType::kPhaserangeErrorDD) {
+          residuals[r].error_interface_ptr->typeInfo() == ErrorType::kPhaserangeErrorDD ||
+          residuals[r].error_interface_ptr->typeInfo() == ErrorType::kMultiPhaserangesErrorDD) {
         ambiguity.residual_block = residuals[r];
         break;
       }

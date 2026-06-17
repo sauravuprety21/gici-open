@@ -138,8 +138,10 @@ bool RtkEstimator::addGnssMeasurementAndState(
   num_satellites_ = num_valid_satellite;
 
   // Add phaserange residual blocks
-  addDdPhaserangeResidualBlocks(
-    curGnssRov(), curGnssRef(), phase_index_pairs, curState());
+  // addDdPhaserangeResidualBlocks(
+  //   curGnssRov(), curGnssRef(), phase_index_pairs, curState());
+  addMultiDdPhaserangeResidualBlocks(curGnssRov(), curGnssRef(),
+                                     phase_index_pairs, curState());
 
   // Add doppler residual blocks
   if (rtk_options_.estimate_velocity) {

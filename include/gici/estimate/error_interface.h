@@ -64,6 +64,7 @@ enum class ErrorType : uint8_t {
   kPhaserangeError,
   kPhaserangeErrorSD,
   kPhaserangeErrorDD,
+  kMultiPhaserangesErrorDD,
   kDopplerError,
   kAmbiguityError,
   kPositionError,

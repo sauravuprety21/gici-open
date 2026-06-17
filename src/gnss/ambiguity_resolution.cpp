@@ -81,7 +81,8 @@ AmbiguityResolution::Result AmbiguityResolution::solvePpp(
     for (size_t r = 0; r < residuals.size(); ++r) {
       if (residuals[r].error_interface_ptr->typeInfo() == ErrorType::kPhaserangeError ||
           residuals[r].error_interface_ptr->typeInfo() == ErrorType::kPhaserangeErrorSD ||
-          residuals[r].error_interface_ptr->typeInfo() == ErrorType::kPhaserangeErrorDD) {
+          residuals[r].error_interface_ptr->typeInfo() == ErrorType::kPhaserangeErrorDD ||
+          residuals[r].error_interface_ptr->typeInfo() == ErrorType::kMultiPhaserangesErrorDD) {
         ambiguity.residual_block = residuals[r];
         break;
       }
@@ -876,7 +877,8 @@ double AmbiguityResolution::computeRangeCost(const BackendId& epoch_id)
           type == ErrorType::kMultiPseudorangesErrorDD ||
           type == ErrorType::kPhaserangeError ||
           type == ErrorType::kPhaserangeErrorSD ||
-          type == ErrorType::kPhaserangeErrorDD))
+          type == ErrorType::kPhaserangeErrorDD ||
+          type == ErrorType::kMultiPhaserangesErrorDD))
       continue;
     double residual[1];
     graph_->problem()->EvaluateResidualBlock(residual_block.residual_block_id, 

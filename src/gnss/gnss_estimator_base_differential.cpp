@@ -13,6 +13,7 @@
 #include "gici/gnss/gnss_const_errors.h"
 #include "gici/gnss/gnss_parameter_blocks.h"
 #include "gici/gnss/multi_pseudoranges_err_dd.h"
+#include "gici/gnss/multi_phaseranges_err_dd.h"
 #include "gici/gnss/phaserange_error_dd.h"
 #include "gici/gnss/phaserange_error_sd.h"
 #include "gici/gnss/pseudorange_error_dd.h"
@@ -534,6 +535,119 @@ void GnssEstimatorBase::addDdPhaserangeResidualBlocks(
   else 
   {
     LOG(FATAL) << "Not supported yet!";
+  }
+}
+
+void GnssEstimatorBase::addMultiDdPhaserangeResidualBlocks(
+    const GnssMeasurement &measurement_rov,
+    const GnssMeasurement &measurement_ref,
+    const GnssMeasurementDDIndexPairs &index_pairs, const State &state) {
+  const BackendId parameter_id = state.id;
+  std::set<std::string> prns_used;
+
+  std::set<std::pair<char, int>> sys_code_pairs;
+
+  for (const auto &sat : measurement_rov.satellites) {
+    const Satellite &satellite = sat.second;
+    char system = satellite.getSystem();
+    if (!gnss_common::useSystem(gnss_base_options_.common, system) ||
+        !gnss_common::useSatellite(gnss_base_options_.common, satellite.prn))
+      continue;
+
+    for (const auto &obs : satellite.observations) {
+      sys_code_pairs.insert(std::make_pair(system, obs.first));
+    }
+  }
+
+  for (const auto &sys_code : sys_code_pairs) {
+    char curr_system = sys_code.first;
+    int curr_code = sys_code.second;
+    GnssMeasurementDDIndexPairs curr_index_pairs;
+
+    for (const auto &index_pair : index_pairs) {
+      const Satellite &satellite_rov = measurement_rov.getSat(index_pair.rov);
+      if (satellite_rov.getSystem() != curr_system)
+        continue;
+
+      if (index_pair.rov.code_type != curr_code)
+        continue;
+
+      const Satellite &satellite_ref = measurement_ref.getSat(index_pair.ref);
+
+      if (satellite_rov.prn != satellite_ref.prn) {
+        LOG(INFO) << "Rov and ref prn mismatch " << satellite_rov.prn << ","
+                  << satellite_ref.prn;
+        continue;
+      }
+      if (index_pair.rov.code_type != index_pair.ref.code_type) {
+        LOG(INFO) << "Rov and ref obs code mismatch " << satellite_rov.prn
+                  << "," << satellite_ref.prn << "\t"
+                  << index_pair.rov.code_type << ","
+                  << index_pair.ref.code_type;
+        continue;
+      }
+      curr_index_pairs.push_back(index_pair);
+      prns_used.insert(satellite_rov.prn);
+    }
+
+    if (curr_index_pairs.size() > 0) {
+
+      std::shared_ptr<ceres::CostFunction> phaserange_error;
+      std::vector<std::shared_ptr<ParameterBlock>> paramBlockPtrs;
+
+      // position in ECEF for standalone
+      if (parameter_id.type() == IdType::gPosition) {
+        is_state_pose_ = false;
+        phaserange_error = std::make_shared<MultiPhaserangesErrorDD<3, 1>>(
+            measurement_rov, measurement_ref, curr_index_pairs,
+            curr_index_pairs.back().rov_base, curr_index_pairs.back().ref_base,
+            gnss_base_options_.error_parameter);
+        paramBlockPtrs.push_back(
+            graph_->parameterBlockPtr(parameter_id.asInteger()));
+      }
+      // pose in ENU for fusion
+      else {
+        is_state_pose_ = true;
+        BackendId pose_id = state.id_in_graph;
+        phaserange_error = std::make_shared<MultiPhaserangesErrorDD<7, 3, 1>>(
+            measurement_rov, measurement_ref, curr_index_pairs,
+            curr_index_pairs.back().rov_base, curr_index_pairs.back().ref_base,
+            gnss_base_options_.error_parameter);
+        auto error_ =
+            std::dynamic_pointer_cast<MultiPhaserangesErrorDD<7, 3, 1>>(
+                phaserange_error);
+        if (error_) {
+          error_->setCoordinate(coordinate_);
+        }
+        paramBlockPtrs.push_back(
+            graph_->parameterBlockPtr(pose_id.asInteger()));
+        paramBlockPtrs.push_back(
+            graph_->parameterBlockPtr(gnss_extrinsics_id_.asInteger()));
+      }
+
+      double phase_id = gnss_common::getPhaseID(curr_system, curr_code);
+      const Satellite &satellite_base =
+          measurement_ref.getSat(curr_index_pairs.back().ref_base);
+      BackendId ambiguity_base_id = createGnssAmbiguityId(
+          satellite_base.prn, phase_id, parameter_id.bundleId());
+
+      paramBlockPtrs.push_back(
+          graph_->parameterBlockPtr(ambiguity_base_id.asInteger()));
+
+      BackendId ambiguity_id;
+      for (const auto &index_pair : curr_index_pairs) {
+        const Satellite &satellite = measurement_rov.getSat(index_pair.rov);
+        ambiguity_id = createGnssAmbiguityId(satellite.prn, phase_id,
+                                             parameter_id.bundleId());
+        paramBlockPtrs.push_back(
+            graph_->parameterBlockPtr(ambiguity_id.asInteger()));
+      }
+
+      graph_->addResidualBlock(phaserange_error,
+                               huber_loss_function_ ? huber_loss_function_.get()
+                                                    : nullptr,
+                               paramBlockPtrs);
+    }
   }
 }
 

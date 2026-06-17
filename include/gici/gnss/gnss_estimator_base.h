@@ -253,6 +253,12 @@ protected:
     const GnssMeasurementDDIndexPairs& index_pairs,
     const State& state);
 
+  // Add multiple double-differenced phaserange residual block to graph
+  void addMultiDdPhaserangeResidualBlocks(
+      const GnssMeasurement &measurement_rov,
+      const GnssMeasurement &measurement_ref,
+      const GnssMeasurementDDIndexPairs &index_pairs, const State &state);
+
   // Add doppler residual blocks to graph
   void addDopplerResidualBlocks(
     const GnssMeasurement& measurement,

@@ -23,6 +23,8 @@ const std::map<ErrorType, std::string> kErrorToStr{
     {ErrorType::kPhaserangeError, std::string("PhaserangeError")},
     {ErrorType::kPhaserangeErrorSD, std::string("PhaserangeErrorSD")},
     {ErrorType::kPhaserangeErrorDD, std::string("PhaserangeErrorDD")},
+    {ErrorType::kMultiPhaserangesErrorDD,
+     std::string("MultiPhaserangesErrorDD")},
     {ErrorType::kDopplerError, std::string("DopplerError")},
     {ErrorType::kAmbiguityError, std::string("AmbiguityError")},
     {ErrorType::kPositionError, std::string("PositionError")},

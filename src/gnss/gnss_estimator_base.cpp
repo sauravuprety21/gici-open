@@ -1473,9 +1473,11 @@ size_t GnssEstimatorBase::numPhaserangeError(const State& state)
     auto& residual_block = residual_blocks[i];
     std::shared_ptr<ErrorInterface> interface = residual_block.error_interface_ptr;
     ErrorType type = interface->typeInfo();
-    if (!(type == ErrorType::kPhaserangeError || 
-          type == ErrorType::kPhaserangeErrorSD || 
-          type == ErrorType::kPhaserangeErrorDD)) continue;
+    if (!(type == ErrorType::kPhaserangeError ||
+          type == ErrorType::kPhaserangeErrorSD ||
+          type == ErrorType::kPhaserangeErrorDD ||
+          type == ErrorType::kMultiPhaserangesErrorDD))
+      continue;
     num++;
   }
   return num;
@@ -2285,6 +2287,7 @@ void GnssEstimatorBase::addGnssMeasurementResidualMarginBlocks(const State& stat
       static_cast<int>(ErrorType::kPhaserangeError),
       static_cast<int>(ErrorType::kPhaserangeErrorSD),
       static_cast<int>(ErrorType::kPhaserangeErrorDD),
+      static_cast<int>(ErrorType::kMultiPhaserangesErrorDD),
       static_cast<int>(ErrorType::kDopplerError)};
 
   CHECK(graph_->parameterBlockExists(state.id_in_graph.asInteger()));
@@ -2311,6 +2314,7 @@ void GnssEstimatorBase::addGnssResidualMarginBlocks(const State& state)
       static_cast<int>(ErrorType::kPhaserangeError),
       static_cast<int>(ErrorType::kPhaserangeErrorSD),
       static_cast<int>(ErrorType::kPhaserangeErrorDD),
+      static_cast<int>(ErrorType::kMultiPhaserangesErrorDD),
       static_cast<int>(ErrorType::kDopplerError),
       static_cast<int>(ErrorType::kAmbiguityError),
       static_cast<int>(ErrorType::kClockError),
@@ -2608,6 +2612,7 @@ void GnssEstimatorBase::eraseGnssMeasurementResidualBlocks(const State& state)
       static_cast<int>(ErrorType::kPhaserangeError),
       static_cast<int>(ErrorType::kPhaserangeErrorSD),
       static_cast<int>(ErrorType::kPhaserangeErrorDD),
+      static_cast<int>(ErrorType::kMultiPhaserangesErrorDD),
       static_cast<int>(ErrorType::kDopplerError)};
 
   const BackendId& parameter_id = state.id;
