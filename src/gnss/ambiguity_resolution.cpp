@@ -880,11 +880,15 @@ double AmbiguityResolution::computeRangeCost(const BackendId& epoch_id)
           type == ErrorType::kPhaserangeErrorDD ||
           type == ErrorType::kMultiPhaserangesErrorDD))
       continue;
-    double residual[1];
+    const int residual_dim =
+        static_cast<int>(residual_block.error_interface_ptr->residualDim());
+    std::vector<double> residual(residual_dim);
     graph_->problem()->EvaluateResidualBlock(residual_block.residual_block_id, 
-      false, nullptr, residual, nullptr);
-    residuals.push_back(*residual);
-    total_cost_square += square(*residual);
+      false, nullptr, residual.data(), nullptr);
+    for (int j = 0; j < residual_dim; ++j) {
+      residuals.push_back(residual[j]);
+      total_cost_square += square(residual[j]);
+    }
   }
   return sqrt(total_cost_square);
 }
