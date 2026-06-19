@@ -120,9 +120,12 @@ bool RtkEstimator::addGnssMeasurementAndState(
   
   // Add pseudorange residual blocks
   int num_valid_satellite = 0;
-  addDdPseudorangeResidualBlocks(curGnssRov(), 
-    curGnssRef(), code_index_pairs, curState(), num_valid_satellite);
-
+  // addDdPseudorangeResidualBlocks(curGnssRov(), 
+  //   curGnssRef(), code_index_pairs, curState(), num_valid_satellite);
+  addMultiDdPseudorangesResidualBlocks(curGnssRov(), curGnssRef(),
+                                       code_index_pairs, curState(),
+                                       num_valid_satellite);
+                                       
   // Check if insufficient satellites
   if (!checkSufficientSatellite(num_valid_satellite, 0)) {
     // erase parameters in current state
