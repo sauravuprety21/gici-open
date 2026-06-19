@@ -175,13 +175,13 @@ bool MultiPhaserangesErrorDD<Ns...>::EvaluateWithMinimalJacobians(
   Eigen::Matrix<double, 6, 7, Eigen::RowMajor> J_lift =
       Eigen::Matrix<double, 6, 7, Eigen::RowMajor>::Zero();
 
-  Eigen::VectorXd J_dambiguity_base = Eigen::VectorXd::Constant(num_residuals(), -1.0);
+  Eigen::VectorXd J_dambiguity_base = Eigen::VectorXd::Constant(num_residuals(), 1.0);
 
   Eigen::MatrixXd J_dambiguities(num_residuals(), num_residuals());
   // Rest satellites ambiguities
   J_dambiguities =
       whitening_cholesky_factor_.triangularView<Eigen::Lower>().solve(
-          Eigen::MatrixXd::Identity(num_residuals(), num_residuals()));
+          -1*Eigen::MatrixXd::Identity(num_residuals(), num_residuals()));
 
   /* Residuals */
   Eigen::VectorXd Residuals = Eigen::VectorXd::Zero(num_residuals());
