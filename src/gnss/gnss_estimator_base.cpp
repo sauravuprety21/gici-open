@@ -1473,10 +1473,13 @@ size_t GnssEstimatorBase::numPhaserangeError(const State& state)
     auto& residual_block = residual_blocks[i];
     std::shared_ptr<ErrorInterface> interface = residual_block.error_interface_ptr;
     ErrorType type = interface->typeInfo();
+    if (type == ErrorType::kMultiPhaserangesErrorDD) {
+      num += interface->residualDim();
+      continue;
+    }
     if (!(type == ErrorType::kPhaserangeError ||
           type == ErrorType::kPhaserangeErrorSD ||
-          type == ErrorType::kPhaserangeErrorDD ||
-          type == ErrorType::kMultiPhaserangesErrorDD))
+          type == ErrorType::kPhaserangeErrorDD))
       continue;
     num++;
   }
@@ -1517,16 +1520,20 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(const State& state, bool reje
     ErrorType type = interface->typeInfo();
     if (!(type == ErrorType::kPseudorangeError || 
           type == ErrorType::kPseudorangeErrorSD || 
-          type == ErrorType::kPseudorangeErrorDD)) continue;
-    double residual[1];
+          type == ErrorType::kPseudorangeErrorDD ||
+          type == ErrorType::kMultiPseudorangesError ||
+          type == ErrorType::kMultiPseudorangesErrorDD)) continue;
+    std::vector<double> residual(interface->residualDim());
     graph_->problem()->EvaluateResidualBlock(residual_block.residual_block_id, 
-      false, nullptr, residual, nullptr);
-    interface->deNormalizeResidual(residual);
-    residuals.push_back(*residual);
-    residual_index_to_id.insert(std::make_pair(
-      residuals.size() - 1, residual_block.residual_block_id)); 
-    residual_index_to_interface.insert(std::make_pair(
-      residuals.size() - 1, residual_block.error_interface_ptr));
+      false, nullptr, residual.data(), nullptr);
+    interface->deNormalizeResidual(residual.data());
+    for (size_t j = 0; j < residual.size(); ++j) {
+      residuals.push_back(residual[j]);
+      residual_index_to_id.insert(std::make_pair(
+        residuals.size() - 1, residual_block.residual_block_id));
+      residual_index_to_interface.insert(std::make_pair(
+        residuals.size() - 1, residual_block.error_interface_ptr));
+    }
   }
   if (residuals.size() == 0) return 0;
   double residuals_median = getMedian(residuals);
@@ -1563,6 +1570,22 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(const State& state, bool reje
         indexes_to_remove.push_back(index);
       }
     }
+    std::vector<size_t> unique_indexes_to_remove;
+    for (auto index : indexes_to_remove) {
+      ceres::ResidualBlockId residual_id =
+        residual_index_to_id.at(static_cast<size_t>(index));
+      bool already_selected = false;
+      for (auto unique_index : unique_indexes_to_remove) {
+        if (residual_index_to_id.at(unique_index) == residual_id) {
+          already_selected = true;
+          break;
+        }
+      }
+      if (!already_selected) {
+        unique_indexes_to_remove.push_back(index);
+      }
+    }
+    indexes_to_remove.swap(unique_indexes_to_remove);
     // apply rejection
     for (auto index : indexes_to_remove) {
       graph_->removeResidualBlock(
@@ -1674,16 +1697,20 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(
     ErrorType type = interface->typeInfo();
     if (!(type == ErrorType::kPseudorangeError || 
           type == ErrorType::kPseudorangeErrorSD || 
-          type == ErrorType::kPseudorangeErrorDD)) continue;
-    double residual[1];
+          type == ErrorType::kPseudorangeErrorDD ||
+          type == ErrorType::kMultiPseudorangesError ||
+          type == ErrorType::kMultiPseudorangesErrorDD)) continue;
+    std::vector<double> residual(interface->residualDim());
     graph_->problem()->EvaluateResidualBlock(residual_block.residual_block_id, 
-      false, nullptr, residual, nullptr);
-    interface->deNormalizeResidual(residual);
-    residuals.push_back(*residual);
-    residual_index_to_id.insert(std::make_pair(
-      residuals.size() - 1, residual_block.residual_block_id)); 
-    residual_index_to_interface.insert(std::make_pair(
-      residuals.size() - 1, residual_block.error_interface_ptr));
+      false, nullptr, residual.data(), nullptr);
+    interface->deNormalizeResidual(residual.data());
+    for (size_t j = 0; j < residual.size(); ++j) {
+      residuals.push_back(residual[j]);
+      residual_index_to_id.insert(std::make_pair(
+        residuals.size() - 1, residual_block.residual_block_id));
+      residual_index_to_interface.insert(std::make_pair(
+        residuals.size() - 1, residual_block.error_interface_ptr));
+    }
   }
   if (residuals.size() == 0) return 0;
   double residuals_median = getMedian(residuals);
@@ -1720,6 +1747,22 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(
         indexes_to_remove.push_back(index);
       }
     }
+    std::vector<size_t> unique_indexes_to_remove;
+    for (auto index : indexes_to_remove) {
+      ceres::ResidualBlockId residual_id =
+        residual_index_to_id.at(static_cast<size_t>(index));
+      bool already_selected = false;
+      for (auto unique_index : unique_indexes_to_remove) {
+        if (residual_index_to_id.at(unique_index) == residual_id) {
+          already_selected = true;
+          break;
+        }
+      }
+      if (!already_selected) {
+        unique_indexes_to_remove.push_back(index);
+      }
+    }
+    indexes_to_remove.swap(unique_indexes_to_remove);
     // apply rejection
     for (auto index : indexes_to_remove) {
       graph_->removeResidualBlock(
@@ -1815,6 +1858,10 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(
           it = ambiguity_state.ids.erase(it);
         }
       }
+      if (type == ErrorType::kMultiPseudorangesError ||
+          type == ErrorType::kMultiPseudorangesErrorDD) {
+        info_message += " (multi residual block)";
+      }
 #undef MAP
 
       if (base_options_.verbose_output) {
@@ -1867,16 +1914,19 @@ size_t GnssEstimatorBase::rejectPhaserangeOutlier(
     ErrorType type = interface->typeInfo();
     if (!(type == ErrorType::kPhaserangeError || 
           type == ErrorType::kPhaserangeErrorSD || 
-          type == ErrorType::kPhaserangeErrorDD)) continue;
-    double residual[1];
+          type == ErrorType::kPhaserangeErrorDD ||
+          type == ErrorType::kMultiPhaserangesErrorDD)) continue;
+    std::vector<double> residual(interface->residualDim());
     graph_->problem()->EvaluateResidualBlock(residual_block.residual_block_id, 
-      false, nullptr, residual, nullptr);
-    interface->deNormalizeResidual(residual);
-    residuals.push_back(*residual);
-    residual_index_to_id.insert(std::make_pair(
-      residuals.size() - 1, residual_block.residual_block_id)); 
-    residual_index_to_interface.insert(std::make_pair(
-      residuals.size() - 1, residual_block.error_interface_ptr));
+      false, nullptr, residual.data(), nullptr);
+    interface->deNormalizeResidual(residual.data());
+    for (size_t j = 0; j < residual.size(); ++j) {
+      residuals.push_back(residual[j]);
+      residual_index_to_id.insert(std::make_pair(
+        residuals.size() - 1, residual_block.residual_block_id));
+      residual_index_to_interface.insert(std::make_pair(
+        residuals.size() - 1, residual_block.error_interface_ptr));
+    }
   }
   if (residuals.size() == 0) return 0;
   double residuals_median = getMedian(residuals);
@@ -1913,6 +1963,22 @@ size_t GnssEstimatorBase::rejectPhaserangeOutlier(
         indexes_to_remove.push_back(index);
       }
     }
+    std::vector<size_t> unique_indexes_to_remove;
+    for (auto index : indexes_to_remove) {
+      ceres::ResidualBlockId residual_id =
+        residual_index_to_id.at(static_cast<size_t>(index));
+      bool already_selected = false;
+      for (auto unique_index : unique_indexes_to_remove) {
+        if (residual_index_to_id.at(unique_index) == residual_id) {
+          already_selected = true;
+          break;
+        }
+      }
+      if (!already_selected) {
+        unique_indexes_to_remove.push_back(index);
+      }
+    }
+    indexes_to_remove.swap(unique_indexes_to_remove);
     // apply rejection
     for (auto index : indexes_to_remove) {
       // get corresponding ambiguity parameter
@@ -1931,7 +1997,8 @@ size_t GnssEstimatorBase::rejectPhaserangeOutlier(
           ErrorType type = residuals[r].error_interface_ptr->typeInfo();
           if (type == ErrorType::kPhaserangeError ||
               type == ErrorType::kPhaserangeErrorSD ||
-              type == ErrorType::kPhaserangeErrorDD) {
+              type == ErrorType::kPhaserangeErrorDD ||
+              type == ErrorType::kMultiPhaserangesErrorDD) {
             num_phaserange_block++;
           }
         }
@@ -2000,6 +2067,9 @@ size_t GnssEstimatorBase::rejectPhaserangeOutlier(
             phase_str_rov + "&" + phase_str_ref + "-" + index.rov_base.prn + 
             "|" + phase_str_rov_base + "&" + phase_str_ref_base;
         }
+        if (type == ErrorType::kMultiPhaserangesErrorDD) {
+          info_message += " (multi residual block)";
+        }
 #undef MAP
         LOG(INFO) << "Rejected phaserange outlier" << info_message
                   << ": residual = " << std::fixed << residuals[index];
@@ -2016,7 +2086,8 @@ size_t GnssEstimatorBase::rejectPhaserangeOutlier(
         ErrorType type = residuals[r].error_interface_ptr->typeInfo();
         if (type == ErrorType::kPhaserangeError ||
             type == ErrorType::kPhaserangeErrorSD ||
-            type == ErrorType::kPhaserangeErrorDD) {
+            type == ErrorType::kPhaserangeErrorDD ||
+            type == ErrorType::kMultiPhaserangesErrorDD) {
           num_phaserange_block++;
         }
       }

@@ -131,7 +131,7 @@ public:
 
   // Convert normalized residual to raw residual
   virtual void deNormalizeResidual(double *residuals) const {
-    Eigen::Map<Eigen::Matrix<double, 1, 1>> Residual(residuals);
+    Eigen::Map<Eigen::VectorXd> Residual(residuals, num_residuals());
     Residual = whitening_cholesky_factor_ * Residual;
   }
 
