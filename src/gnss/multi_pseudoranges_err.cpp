@@ -290,28 +290,47 @@ bool MultiPseudorangesError<Ns ...>::EvaluateWithMinimalJacobians(
         J0 = whitening_cholesky_factor_.triangularView<Eigen::Lower>().solve(
             J_t_ECEF);
       }
+      if (jacobians_minimal != nullptr && jacobians_minimal[0] != nullptr) {
+        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>>
+            J0_minimal_mapped(jacobians_minimal[0], num_residuals(), 3);
+        J0_minimal_mapped =
+            whitening_cholesky_factor_.triangularView<Eigen::Lower>().solve(
+                J_t_ECEF);
+      }
       // Clock
       if (jacobians != nullptr && jacobians[1] != nullptr) {
         Eigen::Map<Eigen::VectorXd> J1(jacobians[1], num_residuals());
         J1 = whitening_cholesky_factor_.triangularView<Eigen::Lower>().solve(
             J_clock);
       }
+      if (jacobians_minimal != nullptr && jacobians_minimal[1] != nullptr) {
+        Eigen::Map<Eigen::VectorXd> J1_minimal_mapped(jacobians_minimal[1],
+                                                      num_residuals());
+        J1_minimal_mapped =
+            whitening_cholesky_factor_.triangularView<Eigen::Lower>().solve(
+                J_clock);
+      }
     }
     // Group 2
     if (parameter_block_group_ == 2) {
+      J0_minimal =
+          whitening_cholesky_factor_.triangularView<Eigen::Lower>().solve(
+              J_T_WS);
+
       // Pose
       if (jacobians != nullptr && jacobians[0] != nullptr) {
         Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, 7, Eigen::RowMajor>>
             J0(jacobians[0], num_residuals(), 7);
 
-        J0_minimal =
-            whitening_cholesky_factor_.triangularView<Eigen::Lower>().solve(
-                J_T_WS);
-
         // pseudo inverse of the local parametrization Jacobian:
         PoseLocalParameterization::liftJacobian(parameters[0], J_lift.data());
 
         J0 = J0_minimal * J_lift;
+      }
+      if (jacobians_minimal != nullptr && jacobians_minimal[0] != nullptr) {
+        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, 6, Eigen::RowMajor>>
+            J0_minimal_mapped(jacobians_minimal[0], num_residuals(), 6);
+        J0_minimal_mapped = J0_minimal;
       }
 
       // Relative position
@@ -321,11 +340,25 @@ bool MultiPseudorangesError<Ns ...>::EvaluateWithMinimalJacobians(
         J1 = whitening_cholesky_factor_.triangularView<Eigen::Lower>().solve(
             J_t_SR_S);
       }
+      if (jacobians_minimal != nullptr && jacobians_minimal[1] != nullptr) {
+        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>>
+            J1_minimal_mapped(jacobians_minimal[1], num_residuals(), 3);
+        J1_minimal_mapped =
+            whitening_cholesky_factor_.triangularView<Eigen::Lower>().solve(
+                J_t_SR_S);
+      }
       // Clock
       if (jacobians != nullptr && jacobians[2] != nullptr) {
-        Eigen::Map<Eigen::VectorXd> J1(jacobians[1], num_residuals());
-        J1 = whitening_cholesky_factor_.triangularView<Eigen::Lower>().solve(
+        Eigen::Map<Eigen::VectorXd> J2(jacobians[2], num_residuals());
+        J2 = whitening_cholesky_factor_.triangularView<Eigen::Lower>().solve(
             J_clock);
+      }
+      if (jacobians_minimal != nullptr && jacobians_minimal[2] != nullptr) {
+        Eigen::Map<Eigen::VectorXd> J2_minimal_mapped(jacobians_minimal[2],
+                                                      num_residuals());
+        J2_minimal_mapped =
+            whitening_cholesky_factor_.triangularView<Eigen::Lower>().solve(
+                J_clock);
       }
     }
   }
