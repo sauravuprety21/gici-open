@@ -129,6 +129,10 @@ public:
     return ErrorType::kMultiPhaserangesErrorDD;
   }
 
+  const GnssMeasurementDDIndexPairs& getGnssMeasurementIndexPairs() const {
+    return index_pairs_;
+  }
+
   // Convert normalized residual to raw residual
   virtual void deNormalizeResidual(double *residuals) const {
     Eigen::Map<Eigen::VectorXd> Residual(residuals, num_residuals());

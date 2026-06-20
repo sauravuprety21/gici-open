@@ -13,6 +13,8 @@
 #include "gici/gnss/pseudorange_error.h"
 #include "gici/gnss/phaserange_error.h"
 #include "gici/gnss/multi_pseudoranges_err.h"
+#include "gici/gnss/multi_pseudoranges_err_dd.h"
+#include "gici/gnss/multi_phaseranges_err_dd.h"
 #include "gici/gnss/doppler_error.h"
 #include "gici/gnss/gnss_relative_errors.h"
 #include "gici/gnss/relative_isb_error.h"
@@ -21,6 +23,20 @@
 #include "gici/gnss/code_phase_maps.h"
 
 namespace gici {
+
+namespace {
+
+void eraseObservationFromMeasurement(
+    GnssMeasurement& measurement, const GnssMeasurementIndex& index) {
+  auto sat_it = measurement.satellites.find(index.prn);
+  if (sat_it == measurement.satellites.end()) return;
+  sat_it->second.observations.erase(index.code_type);
+  if (sat_it->second.observations.empty()) {
+    measurement.satellites.erase(sat_it);
+  }
+}
+
+} // namespace
 
 // Static variables
 int32_t GnssEstimatorBase::solution_id = 0;
@@ -1514,6 +1530,7 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(const State& state, bool reje
   std::vector<double> residuals;
   std::unordered_map<size_t, ceres::ResidualBlockId> residual_index_to_id;
   std::unordered_map<size_t, std::shared_ptr<ErrorInterface>> residual_index_to_interface;
+  std::unordered_map<size_t, size_t> residual_index_to_row;
   for (size_t i = 0; i < residual_blocks.size(); i++) {
     auto& residual_block = residual_blocks[i];
     std::shared_ptr<ErrorInterface> interface = residual_block.error_interface_ptr;
@@ -1533,6 +1550,8 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(const State& state, bool reje
         residuals.size() - 1, residual_block.residual_block_id));
       residual_index_to_interface.insert(std::make_pair(
         residuals.size() - 1, residual_block.error_interface_ptr));
+      residual_index_to_row.insert(std::make_pair(
+        residuals.size() - 1, j));
     }
   }
   if (residuals.size() == 0) return 0;
@@ -1570,26 +1589,11 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(const State& state, bool reje
         indexes_to_remove.push_back(index);
       }
     }
-    std::vector<size_t> unique_indexes_to_remove;
+    bool need_rebuild_multi_dd = false;
+    // apply rejection
     for (auto index : indexes_to_remove) {
       ceres::ResidualBlockId residual_id =
         residual_index_to_id.at(static_cast<size_t>(index));
-      bool already_selected = false;
-      for (auto unique_index : unique_indexes_to_remove) {
-        if (residual_index_to_id.at(unique_index) == residual_id) {
-          already_selected = true;
-          break;
-        }
-      }
-      if (!already_selected) {
-        unique_indexes_to_remove.push_back(index);
-      }
-    }
-    indexes_to_remove.swap(unique_indexes_to_remove);
-    // apply rejection
-    for (auto index : indexes_to_remove) {
-      graph_->removeResidualBlock(
-        residual_index_to_id.at(static_cast<size_t>(index)));
       if (base_options_.verbose_output) 
       {
         std::string info_message;
@@ -1642,10 +1646,79 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(const State& state, bool reje
             code_str_rov + "&" + code_str_ref + "-" + index.rov_base.prn + 
             "|" + code_str_rov_base + "&" + code_str_ref_base;
         }
+        if (type == ErrorType::kMultiPseudorangesErrorDD) {
+          const size_t row = residual_index_to_row.at(
+            static_cast<size_t>(index));
+          const auto parameters = graph_->parameters(residual_id);
+          if (parameters.size() == 1) {
+            auto pseudorange_error =
+              std::static_pointer_cast<MultiPseudorangesErrorDD<3>>(
+                error_interface);
+            const auto& row_index =
+              pseudorange_error->getGnssMeasurementIndexPairs().at(row).rov;
+            system = row_index.prn[0];
+            code_type = row_index.code_type;
+            RINEX_TO_CODE_MAPS;
+            info_message += " at " + row_index.prn + "|" + code_str +
+              " (multi residual row)";
+          }
+          else {
+            auto pseudorange_error =
+              std::static_pointer_cast<MultiPseudorangesErrorDD<7, 3>>(
+                error_interface);
+            const auto& row_index =
+              pseudorange_error->getGnssMeasurementIndexPairs().at(row).rov;
+            system = row_index.prn[0];
+            code_type = row_index.code_type;
+            RINEX_TO_CODE_MAPS;
+            info_message += " at " + row_index.prn + "|" + code_str +
+              " (multi residual row)";
+          }
+        }
 #undef MAP
         LOG(INFO) << "Rejected pseudorange outlier" << info_message
                   << ": residual = " << std::fixed << residuals[index];
       }
+
+      std::shared_ptr<ErrorInterface> error_interface =
+        residual_index_to_interface.at(static_cast<size_t>(index));
+      if (error_interface->typeInfo() == ErrorType::kMultiPseudorangesErrorDD) {
+        const size_t row = residual_index_to_row.at(
+          static_cast<size_t>(index));
+        const auto parameters = graph_->parameters(residual_id);
+        if (parameters.size() == 1) {
+          auto pseudorange_error =
+            std::static_pointer_cast<MultiPseudorangesErrorDD<3>>(
+              error_interface);
+          const auto& index_pair =
+            pseudorange_error->getGnssMeasurementIndexPairs().at(row);
+          eraseObservationFromMeasurement(curGnssRov(), index_pair.rov);
+          eraseObservationFromMeasurement(curGnssRef(), index_pair.ref);
+        }
+        else {
+          auto pseudorange_error =
+            std::static_pointer_cast<MultiPseudorangesErrorDD<7, 3>>(
+              error_interface);
+          const auto& index_pair =
+            pseudorange_error->getGnssMeasurementIndexPairs().at(row);
+          eraseObservationFromMeasurement(curGnssRov(), index_pair.rov);
+          eraseObservationFromMeasurement(curGnssRef(), index_pair.ref);
+        }
+        need_rebuild_multi_dd = true;
+      }
+      else {
+        graph_->removeResidualBlock(residual_id);
+      }
+    }
+
+    if (need_rebuild_multi_dd) {
+      erasePseudorangeResidualBlocks(state);
+      std::map<char, std::string> system_to_base_prn;
+      GnssMeasurementDDIndexPairs index_pairs = gnss_common::formPseudorangeDDPair(
+        curGnssRov(), curGnssRef(), system_to_base_prn, gnss_base_options_.common);
+      int num_valid_satellite = 0;
+      addMultiDdPseudorangesResidualBlocks(
+        curGnssRov(), curGnssRef(), index_pairs, state, num_valid_satellite);
     }
 
     // Check if any clock parameter block do not have residuals
@@ -1691,6 +1764,7 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(
   std::vector<double> residuals;
   std::unordered_map<size_t, ceres::ResidualBlockId> residual_index_to_id;
   std::unordered_map<size_t, std::shared_ptr<ErrorInterface>> residual_index_to_interface;
+  std::unordered_map<size_t, size_t> residual_index_to_row;
   for (size_t i = 0; i < residual_blocks.size(); i++) {
     auto& residual_block = residual_blocks[i];
     std::shared_ptr<ErrorInterface> interface = residual_block.error_interface_ptr;
@@ -1710,6 +1784,8 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(
         residuals.size() - 1, residual_block.residual_block_id));
       residual_index_to_interface.insert(std::make_pair(
         residuals.size() - 1, residual_block.error_interface_ptr));
+      residual_index_to_row.insert(std::make_pair(
+        residuals.size() - 1, j));
     }
   }
   if (residuals.size() == 0) return 0;
@@ -1747,31 +1823,16 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(
         indexes_to_remove.push_back(index);
       }
     }
-    std::vector<size_t> unique_indexes_to_remove;
+    bool need_rebuild_multi_dd = false;
+    // apply rejection
     for (auto index : indexes_to_remove) {
       ceres::ResidualBlockId residual_id =
         residual_index_to_id.at(static_cast<size_t>(index));
-      bool already_selected = false;
-      for (auto unique_index : unique_indexes_to_remove) {
-        if (residual_index_to_id.at(unique_index) == residual_id) {
-          already_selected = true;
-          break;
-        }
-      }
-      if (!already_selected) {
-        unique_indexes_to_remove.push_back(index);
-      }
-    }
-    indexes_to_remove.swap(unique_indexes_to_remove);
-    // apply rejection
-    for (auto index : indexes_to_remove) {
-      graph_->removeResidualBlock(
-        residual_index_to_id.at(static_cast<size_t>(index)));
 
       // erase corresponding ambiguity parameter(s)
       std::string info_message;
-      std::shared_ptr<ErrorInterface> error_interface = 
-        residual_index_to_interface.at(static_cast<size_t>(index));
+      std::shared_ptr<ErrorInterface> error_interface =
+          residual_index_to_interface.at(static_cast<size_t>(index));
       ErrorType type = error_interface->typeInfo();
       char system;
       int code_type;
@@ -1804,6 +1865,7 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(
           getGnssMeasurementSDIndexPairFromErrorInterface(error_interface);
         system = index.rov.prn[0];
         code_type = index.rov.code_type;
+        int code_type_rov = code_type;
         RINEX_TO_CODE_MAPS;
         std::string code_str_rov = code_str;
         code_type = index.ref.code_type;
@@ -1812,7 +1874,7 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(
         info_message += " at " + index.rov.prn + "|" + 
           code_str_rov + "&" + code_str_ref;
 
-        int phase_id = gnss_common::getPhaseID(system, code_type);
+        int phase_id = gnss_common::getPhaseID(system, code_type_rov);
         for (auto it = ambiguity_state.ids.begin(); it != ambiguity_state.ids.end(); ) {
           auto& ambiguity_id = *it;
           if (!sameAmbiguity(ambiguity_id, 
@@ -1830,6 +1892,7 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(
           getGnssMeasurementDDIndexPairFromErrorInterface(error_interface);
         system = index.rov.prn[0];
         code_type = index.rov.code_type;
+        int code_type_rov = code_type;
         RINEX_TO_CODE_MAPS;
         std::string code_str_rov = code_str;
         code_type = index.ref.code_type;
@@ -1845,7 +1908,7 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(
           code_str_rov + "&" + code_str_ref + "-" + index.rov_base.prn + 
           "|" + code_str_rov_base + "&" + code_str_ref_base;
 
-        int phase_id = gnss_common::getPhaseID(system, code_type);
+        int phase_id = gnss_common::getPhaseID(system, code_type_rov);
         for (auto it = ambiguity_state.ids.begin(); it != ambiguity_state.ids.end(); ) {
           auto& ambiguity_id = *it;
           if (!sameAmbiguity(ambiguity_id, 
@@ -1860,7 +1923,52 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(
       }
       if (type == ErrorType::kMultiPseudorangesError ||
           type == ErrorType::kMultiPseudorangesErrorDD) {
-        info_message += " (multi residual block)";
+        const size_t row = residual_index_to_row.at(
+          static_cast<size_t>(index));
+        if (type == ErrorType::kMultiPseudorangesErrorDD) {
+          const auto parameters = graph_->parameters(residual_id);
+          GnssMeasurementDDIndexPair index_pair;
+          if (parameters.size() == 1) {
+            auto pseudorange_error =
+              std::static_pointer_cast<MultiPseudorangesErrorDD<3>>(
+                error_interface);
+            index_pair =
+              pseudorange_error->getGnssMeasurementIndexPairs().at(row);
+          }
+          else {
+            auto pseudorange_error =
+              std::static_pointer_cast<MultiPseudorangesErrorDD<7, 3>>(
+                error_interface);
+            index_pair =
+              pseudorange_error->getGnssMeasurementIndexPairs().at(row);
+          }
+          system = index_pair.rov.prn[0];
+          code_type = index_pair.rov.code_type;
+          RINEX_TO_CODE_MAPS;
+          info_message += " at " + index_pair.rov.prn + "|" + code_str +
+            " (multi residual row)";
+
+          eraseObservationFromMeasurement(curGnssRov(), index_pair.rov);
+          eraseObservationFromMeasurement(curGnssRef(), index_pair.ref);
+
+          int phase_id = gnss_common::getPhaseID(system, code_type);
+          for (auto it = ambiguity_state.ids.begin();
+              it != ambiguity_state.ids.end(); ) {
+            auto& ambiguity_id = *it;
+            if (!sameAmbiguity(ambiguity_id,
+                createGnssAmbiguityId(index_pair.rov.prn, phase_id, 0))) {
+              it++; continue;
+            }
+            if (graph_->parameterBlockExists(ambiguity_id.asInteger())) {
+              graph_->removeParameterBlock(ambiguity_id.asInteger());
+            }
+            it = ambiguity_state.ids.erase(it);
+          }
+          need_rebuild_multi_dd = true;
+        }
+        else {
+          info_message += " (multi residual block)";
+        }
       }
 #undef MAP
 
@@ -1868,6 +1976,20 @@ size_t GnssEstimatorBase::rejectPseudorangeOutlier(
           LOG(INFO) << "Rejected pseudorange outlier with ambiguities" << info_message
                     << ": residual = " << std::fixed << residuals[index];
       }
+
+      if (type != ErrorType::kMultiPseudorangesErrorDD) {
+        graph_->removeResidualBlock(residual_id);
+      }
+    }
+
+    if (need_rebuild_multi_dd) {
+      erasePseudorangeResidualBlocks(state);
+      std::map<char, std::string> system_to_base_prn;
+      GnssMeasurementDDIndexPairs index_pairs = gnss_common::formPseudorangeDDPair(
+        curGnssRov(), curGnssRef(), system_to_base_prn, gnss_base_options_.common);
+      int num_valid_satellite = 0;
+      addMultiDdPseudorangesResidualBlocks(
+        curGnssRov(), curGnssRef(), index_pairs, state, num_valid_satellite);
     }
 
     // Check if any clock parameter block do not have residuals
@@ -1908,6 +2030,7 @@ size_t GnssEstimatorBase::rejectPhaserangeOutlier(
   std::vector<double> residuals;
   std::unordered_map<size_t, ceres::ResidualBlockId> residual_index_to_id;
   std::unordered_map<size_t, std::shared_ptr<ErrorInterface>> residual_index_to_interface;
+  std::unordered_map<size_t, size_t> residual_index_to_row;
   for (size_t i = 0; i < residual_blocks.size(); i++) {
     auto& residual_block = residual_blocks[i];
     std::shared_ptr<ErrorInterface> interface = residual_block.error_interface_ptr;
@@ -1926,6 +2049,8 @@ size_t GnssEstimatorBase::rejectPhaserangeOutlier(
         residuals.size() - 1, residual_block.residual_block_id));
       residual_index_to_interface.insert(std::make_pair(
         residuals.size() - 1, residual_block.error_interface_ptr));
+      residual_index_to_row.insert(std::make_pair(
+        residuals.size() - 1, j));
     }
   }
   if (residuals.size() == 0) return 0;
@@ -1963,27 +2088,52 @@ size_t GnssEstimatorBase::rejectPhaserangeOutlier(
         indexes_to_remove.push_back(index);
       }
     }
-    std::vector<size_t> unique_indexes_to_remove;
+    bool need_rebuild_multi_dd = false;
+    // apply rejection
     for (auto index : indexes_to_remove) {
       ceres::ResidualBlockId residual_id =
         residual_index_to_id.at(static_cast<size_t>(index));
-      bool already_selected = false;
-      for (auto unique_index : unique_indexes_to_remove) {
-        if (residual_index_to_id.at(unique_index) == residual_id) {
-          already_selected = true;
-          break;
+      std::shared_ptr<ErrorInterface> error_interface =
+          residual_index_to_interface.at(static_cast<size_t>(index));
+      ErrorType type = error_interface->typeInfo();
+
+      if (type == ErrorType::kMultiPhaserangesErrorDD) {
+        const size_t row = residual_index_to_row.at(
+          static_cast<size_t>(index));
+        GnssMeasurementDDIndexPair index_pair;
+        if (error_interface->parameterBlockDim(0) == 3) {
+          auto phaserange_error =
+            std::static_pointer_cast<MultiPhaserangesErrorDD<3, 1>>(
+              error_interface);
+          index_pair = phaserange_error->getGnssMeasurementIndexPairs().at(row);
         }
+        else {
+          auto phaserange_error =
+            std::static_pointer_cast<MultiPhaserangesErrorDD<7, 3, 1>>(
+              error_interface);
+          index_pair = phaserange_error->getGnssMeasurementIndexPairs().at(row);
+        }
+        eraseObservationFromMeasurement(curGnssRov(), index_pair.rov);
+        eraseObservationFromMeasurement(curGnssRef(), index_pair.ref);
+
+        int phase_id = gnss_common::getPhaseID(
+          index_pair.rov.prn[0], index_pair.rov.code_type);
+        BackendId ambiguity_id = createGnssAmbiguityId(
+          index_pair.rov.prn, phase_id, state.id.bundleId());
+        if (graph_->parameterBlockExists(ambiguity_id.asInteger())) {
+          graph_->removeParameterBlock(ambiguity_id.asInteger());
+        }
+        for (auto it = ambiguity_state.ids.begin();
+            it != ambiguity_state.ids.end(); ) {
+          if (*it == ambiguity_id) it = ambiguity_state.ids.erase(it);
+          else it++;
+        }
+        need_rebuild_multi_dd = true;
       }
-      if (!already_selected) {
-        unique_indexes_to_remove.push_back(index);
-      }
-    }
-    indexes_to_remove.swap(unique_indexes_to_remove);
-    // apply rejection
-    for (auto index : indexes_to_remove) {
+      else {
       // get corresponding ambiguity parameter
       Graph::ParameterBlockCollection parameters = graph_->parameters(
-        residual_index_to_id.at(static_cast<size_t>(index)));
+        residual_id);
       BackendId id;
       for (auto& parameter : parameters) {
         id = BackendId(parameter.first);
@@ -2012,15 +2162,13 @@ size_t GnssEstimatorBase::rejectPhaserangeOutlier(
           }
         }
       }
+      }
 
       // remove residual block. We do not need to call removeResidualBlock() here because the 
       // residual block has already been removed when calling removeParameterBlock()
       if (base_options_.verbose_output) 
       {
         std::string info_message;
-        std::shared_ptr<ErrorInterface> error_interface = 
-          residual_index_to_interface.at(static_cast<size_t>(index));
-        ErrorType type = error_interface->typeInfo();
         char system;
         int phase_id;
         std::string phase_str;
@@ -2068,12 +2216,50 @@ size_t GnssEstimatorBase::rejectPhaserangeOutlier(
             "|" + phase_str_rov_base + "&" + phase_str_ref_base;
         }
         if (type == ErrorType::kMultiPhaserangesErrorDD) {
-          info_message += " (multi residual block)";
+          const size_t row = residual_index_to_row.at(
+            static_cast<size_t>(index));
+          GnssMeasurementDDIndexPair index_pair;
+          if (error_interface->parameterBlockDim(0) == 3) {
+            auto phaserange_error =
+              std::static_pointer_cast<MultiPhaserangesErrorDD<3, 1>>(
+                error_interface);
+            index_pair = phaserange_error->getGnssMeasurementIndexPairs().at(row);
+          }
+          else {
+            auto phaserange_error =
+              std::static_pointer_cast<MultiPhaserangesErrorDD<7, 3, 1>>(
+                error_interface);
+            index_pair = phaserange_error->getGnssMeasurementIndexPairs().at(row);
+          }
+          system = index_pair.rov.prn[0];
+          phase_id = gnss_common::getPhaseID(system, index_pair.rov.code_type);
+          PHASE_CHANNEL_TO_STR_MAPS;
+          info_message += " at " + index_pair.rov.prn + "|" + phase_str +
+            " (multi residual row)";
         }
 #undef MAP
         LOG(INFO) << "Rejected phaserange outlier" << info_message
                   << ": residual = " << std::fixed << residuals[index];
       }
+    }
+
+    if (need_rebuild_multi_dd) {
+      Graph::ResidualBlockCollection residual_blocks =
+        graph_->residuals(state.id_in_graph.asInteger());
+      for (const auto& residual_block : residual_blocks) {
+        ErrorType type = residual_block.error_interface_ptr->typeInfo();
+        if (type == ErrorType::kPhaserangeError ||
+            type == ErrorType::kPhaserangeErrorSD ||
+            type == ErrorType::kPhaserangeErrorDD ||
+            type == ErrorType::kMultiPhaserangesErrorDD) {
+          graph_->removeResidualBlock(residual_block.residual_block_id);
+        }
+      }
+      std::map<char, std::string> system_to_base_prn;
+      GnssMeasurementDDIndexPairs index_pairs = gnss_common::formPhaserangeDDPair(
+        curGnssRov(), curGnssRef(), system_to_base_prn, gnss_base_options_.common);
+      addMultiDdPhaserangeResidualBlocks(
+        curGnssRov(), curGnssRef(), index_pairs, state);
     }
 
     // Check if any ambiguity parameter do not have residual blocks now
