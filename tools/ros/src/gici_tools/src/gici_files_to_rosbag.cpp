@@ -55,6 +55,12 @@ struct InputSource {
   std::shared_ptr<FileReaderBase> reader;
 };
 
+struct ObservationTimeline {
+  bool has_observation = false;
+  double first_observation_time = INFINITY;
+  double last_observation_time = -INFINITY;
+};
+
 void writeRosbag(const std::shared_ptr<DataCluster> data_cluster,
   rosbag::Bag& bag, RosbagOption& option, int& sequence, double time_tag);
 
@@ -77,6 +83,14 @@ bool isObservationCluster(const std::shared_ptr<DataCluster>& data_cluster) {
 bool isGnssNonObservationCluster(
     const std::shared_ptr<DataCluster>& data_cluster) {
   return data_cluster && data_cluster->gnss && !isObservationCluster(data_cluster);
+}
+
+bool withinObservationWindow(const ObservationTimeline& timeline,
+                             double time_tag) {
+  return timeline.has_observation &&
+         std::isfinite(time_tag) &&
+         time_tag >= timeline.first_observation_time &&
+         time_tag <= timeline.last_observation_time;
 }
 
 size_t estimateGnssMessageCount(
@@ -166,6 +180,22 @@ std::shared_ptr<DataCluster> cloneDataCluster(
   }
 
   return std::make_shared<DataCluster>();
+}
+
+std::shared_ptr<DataCluster> extractGnssNonObservationCluster(
+    const std::shared_ptr<DataCluster>& data_cluster) {
+  if (!data_cluster || !data_cluster->gnss) return nullptr;
+  if (!isObservationCluster(data_cluster)) return nullptr;
+
+  std::shared_ptr<DataCluster> cloned = cloneDataCluster(data_cluster);
+  auto& types = cloned->gnss->types;
+  types.erase(
+      std::remove(types.begin(), types.end(), GnssDataType::Observation),
+      types.end());
+  if (types.empty()) return nullptr;
+
+  cloned->gnss->observation->n = 0;
+  return cloned;
 }
 
 void writeToMappedOutputs(
@@ -533,6 +563,9 @@ int main(int argc, char** argv)
     return -1;
   }
 
+  std::string master_input_tag;
+  option_tools::safeGet(yaml_node, "master_input_tag", &master_input_tag);
+
   // Get rosbag options
   std::vector<NodeOptionHandle::NodeBasePtr> rosbags;
   if (yaml_node["rosbags"].IsDefined()) {
@@ -634,6 +667,7 @@ int main(int argc, char** argv)
   // messages ahead of the first observation and refresh them periodically.
   std::vector<std::vector<FileReaderBase::DataClusterPair>> post_file_data(
       in_sources.size());
+  std::vector<ObservationTimeline> source_timelines(in_sources.size());
   double first_observation_time = INFINITY;
   for (size_t i = 0; i < in_sources.size(); i++) {
     InputSource& source = in_sources[i];
@@ -644,8 +678,29 @@ int main(int argc, char** argv)
       post_file_data[i].push_back(
           std::make_pair(data.first, cloneDataCluster(data.second)));
       if (!isObservationCluster(data.second) || data.first <= 0.0) continue;
+      source_timelines[i].has_observation = true;
+      source_timelines[i].first_observation_time =
+          std::min(source_timelines[i].first_observation_time, data.first);
+      source_timelines[i].last_observation_time =
+          std::max(source_timelines[i].last_observation_time, data.first);
       first_observation_time = std::min(first_observation_time, data.first);
     }
+  }
+
+  int master_source_index = -1;
+  ObservationTimeline master_timeline;
+  if (!master_input_tag.empty()) {
+    for (size_t i = 0; i < in_sources.size(); i++) {
+      if (in_sources[i].tag != master_input_tag) continue;
+      master_source_index = static_cast<int>(i);
+      master_timeline = source_timelines[i];
+      break;
+    }
+    CHECK(master_source_index >= 0)
+        << "Unable to find master_input_tag " << master_input_tag;
+    CHECK(master_timeline.has_observation)
+        << "master_input_tag " << master_input_tag
+        << " does not have any observation data!";
   }
 
   // Read and write files
@@ -698,19 +753,33 @@ int main(int argc, char** argv)
     }
     else if (source.type == StreamerType::PostFile) {
       const auto& dataset = post_file_data[i];
+      const bool has_master_timeline = master_source_index >= 0;
+      const bool is_master_source = static_cast<int>(i) == master_source_index;
       std::vector<std::shared_ptr<DataCluster>> burst_load_gnss_support_data;
       for (const auto& data : dataset) {
         if (data.first == 0.0 && isGnssNonObservationCluster(data.second)) {
           burst_load_gnss_support_data.push_back(data.second);
         }
+        if (has_master_timeline && !is_master_source &&
+            isObservationCluster(data.second) &&
+            !withinObservationWindow(master_timeline, data.first)) {
+          std::shared_ptr<DataCluster> support_only =
+              extractGnssNonObservationCluster(data.second);
+          if (support_only) {
+            burst_load_gnss_support_data.push_back(support_only);
+          }
+        }
       }
 
+      const double scheduling_observation_time =
+          has_master_timeline ? master_timeline.first_observation_time
+                              : first_observation_time;
       bool schedule_non_observation =
           !burst_load_gnss_support_data.empty() &&
-          std::isfinite(first_observation_time);
+          std::isfinite(scheduling_observation_time);
       if (schedule_non_observation) {
         writeBurstLoadGnssSupportMessages(
-            burst_load_gnss_support_data, first_observation_time,
+            burst_load_gnss_support_data, scheduling_observation_time,
             out_range, out_files, out_options,
             out_sequences);
       }
@@ -718,6 +787,11 @@ int main(int argc, char** argv)
       for (const auto& data : dataset) {
         if (schedule_non_observation && data.first == 0.0 &&
             isGnssNonObservationCluster(data.second)) {
+          continue;
+        }
+        if (has_master_timeline && !is_master_source &&
+            isObservationCluster(data.second) &&
+            !withinObservationWindow(master_timeline, data.first)) {
           continue;
         }
         writeToMappedOutputs(data.second, data.first, out_range, out_files,
