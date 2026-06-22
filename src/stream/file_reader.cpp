@@ -154,8 +154,24 @@ double FileReaderBase::getTimestamp(const std::shared_ptr<DataCluster>& data)
         gtime_t t_utc = gpst2utc(t_gps);
         SET_TIMESTAMP(gnss_common::gtimeToDouble(t_utc));
       }
+      if (type == GnssDataType::Ephemeris) {
+        for (int i = 0; i < gnss->ephemeris->n; i++) {
+          const eph_t& eph = gnss->ephemeris->eph[i];
+          gtime_t t_gps = eph.ttr.time ? eph.ttr : eph.toe;
+          if (t_gps.time == 0) continue;
+          gtime_t t_utc = gpst2utc(t_gps);
+          SET_TIMESTAMP(gnss_common::gtimeToDouble(t_utc));
+        }
+        for (int i = 0; i < gnss->ephemeris->ng; i++) {
+          const geph_t& geph = gnss->ephemeris->geph[i];
+          gtime_t t_gps = geph.tof.time ? geph.tof : geph.toe;
+          if (t_gps.time == 0) continue;
+          gtime_t t_utc = gpst2utc(t_gps);
+          SET_TIMESTAMP(gnss_common::gtimeToDouble(t_utc));
+        }
+      }
       if (type == GnssDataType::AntePos || type == GnssDataType::IonAndUtcPara || 
-          type == GnssDataType::PhaseCenter || type == GnssDataType::Ephemeris) {
+          type == GnssDataType::PhaseCenter) {
         // output current timestamp
       }
       if (type == GnssDataType::SSR) {

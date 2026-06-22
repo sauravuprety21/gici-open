@@ -1,0 +1,52 @@
+# Convert RINEX post-file inputs directly to ROS bags.
+# Usage:
+#   ./devel/lib/gici_tools/gici_files_to_rosbag <path-to-this-yaml>
+stream:
+  streamers:
+  - streamer:
+      tag: str_gnss_rov_file
+      type: post-file
+      path: /path/to/rover.obs
+      format:
+        type: gnss-rinex
+  - streamer:
+      tag: str_gnss_ref_file
+      type: post-file
+      path: /path/to/reference.obs
+      format:
+        type: gnss-rinex
+  - streamer:
+      tag: str_gnss_eph_file
+      type: post-file
+      path: /path/to/ephemeris.nav
+      burst_load: true
+      format:
+        type: gnss-rinex
+
+rosbags:
+- rosbag:
+    tag: rosbag_gnss_rov
+    type: rosbag
+    input_tags: [str_gnss_rov_file]
+    path: /path/to/gnss_rover.bag
+    topic_name: /gici/gnss_rover
+    format: gnss_raw
+    enable_observation: true
+- rosbag:
+    tag: rosbag_gnss_ref
+    type: rosbag
+    input_tags: [str_gnss_ref_file]
+    path: /path/to/gnss_reference.bag
+    topic_name: /gici/gnss_reference
+    format: gnss_raw
+    enable_observation: true
+    enable_antenna_position: true
+- rosbag:
+    tag: rosbag_gnss_eph
+    type: rosbag
+    input_tags: [str_gnss_eph_file]
+    path: /path/to/gnss_ephemeris.bag
+    topic_name: /gici/gnss_ephemeris
+    format: gnss_raw
+    enable_ephemeris: true
+    enable_ionosphere_parameter: true

@@ -6,6 +6,7 @@
 *
 * Copyright (C) 2023 by Cheng Chi, All rights reserved.
 **/
+#include <cmath>
 #include <rosbag/bag.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/Imu.h>
@@ -20,6 +21,7 @@
 #include <gici_ros/GnssSsrPhaseBiases.h>
 #include <gici_ros/GnssSsrEphemerides.h>
 #include "gici/utility/node_option_handle.h"
+#include "gici/stream/file_reader.h"
 #include "gici/stream/streamer.h"
 #include "gici/gnss/gnss_common.h"
 #include "gici/ros_utility/edit_timestamp_utility.h"
@@ -40,12 +42,181 @@ struct RosbagOption {
   bool enable_ssr_code_bias = false;
   bool enable_ssr_phase_bias = false;
   bool enable_ssr_ephemeris = false;
+
+  std::vector<eph_t> cumulative_ephemerides;
+  std::vector<geph_t> cumulative_glonass_ephemerides;
 };
+
+struct InputSource {
+  StreamerType type = StreamerType::File;
+  std::string tag;
+  file_t *file = nullptr;
+  std::shared_ptr<FormatorBase> formator;
+  std::shared_ptr<FileReaderBase> reader;
+};
+
+void writeRosbag(const std::shared_ptr<DataCluster> data_cluster,
+  rosbag::Bag& bag, RosbagOption& option, int& sequence, double time_tag);
+
+namespace {
+
+constexpr double kGnssMessagePrerollSec = 2.0;
+constexpr double kGnssMessageSpacingSec = 1.0e-3;
+
+bool hasGnssType(const std::shared_ptr<DataCluster>& data_cluster,
+                 GnssDataType type) {
+  if (!data_cluster || !data_cluster->gnss) return false;
+  const auto& types = data_cluster->gnss->types;
+  return std::find(types.begin(), types.end(), type) != types.end();
+}
+
+bool isObservationCluster(const std::shared_ptr<DataCluster>& data_cluster) {
+  return hasGnssType(data_cluster, GnssDataType::Observation);
+}
+
+bool isGnssNonObservationCluster(
+    const std::shared_ptr<DataCluster>& data_cluster) {
+  return data_cluster && data_cluster->gnss && !isObservationCluster(data_cluster);
+}
+
+size_t estimateGnssMessageCount(
+    const std::shared_ptr<DataCluster>& data_cluster) {
+  if (!data_cluster || !data_cluster->gnss) return 1;
+
+  size_t count = 0;
+  const auto& gnss = data_cluster->gnss;
+  if (hasGnssType(data_cluster, GnssDataType::Ephemeris) && gnss->ephemeris) {
+    count += static_cast<size_t>(gnss->ephemeris->n + gnss->ephemeris->ng);
+  }
+  if (hasGnssType(data_cluster, GnssDataType::AntePos)) count++;
+  if (hasGnssType(data_cluster, GnssDataType::IonAndUtcPara)) count++;
+  if (hasGnssType(data_cluster, GnssDataType::SSR)) count += 3;
+
+  return std::max<size_t>(count, 1);
+}
+
+std::shared_ptr<DataCluster> cloneDataCluster(
+    const std::shared_ptr<DataCluster>& data_cluster) {
+  if (!data_cluster) return nullptr;
+
+  if (data_cluster->gnss) {
+    std::shared_ptr<DataCluster> cloned =
+        std::make_shared<DataCluster>(FormatorType::RINEX);
+    cloned->gnss->types = data_cluster->gnss->types;
+
+    if (data_cluster->gnss->observation) {
+      cloned->gnss->observation->n = data_cluster->gnss->observation->n;
+      memcpy(cloned->gnss->observation->data, data_cluster->gnss->observation->data,
+             sizeof(obsd_t) * MAXOBS);
+    }
+
+    if (data_cluster->gnss->antenna) {
+      memcpy(cloned->gnss->antenna, data_cluster->gnss->antenna, sizeof(sta_t));
+    }
+
+    if (data_cluster->gnss->ephemeris) {
+      nav_t* src = data_cluster->gnss->ephemeris;
+      nav_t* dst = cloned->gnss->ephemeris;
+
+      memcpy(dst->utc_gps, src->utc_gps, sizeof(src->utc_gps));
+      memcpy(dst->utc_glo, src->utc_glo, sizeof(src->utc_glo));
+      memcpy(dst->utc_gal, src->utc_gal, sizeof(src->utc_gal));
+      memcpy(dst->utc_qzs, src->utc_qzs, sizeof(src->utc_qzs));
+      memcpy(dst->utc_cmp, src->utc_cmp, sizeof(src->utc_cmp));
+      memcpy(dst->utc_irn, src->utc_irn, sizeof(src->utc_irn));
+      memcpy(dst->utc_sbs, src->utc_sbs, sizeof(src->utc_sbs));
+      memcpy(dst->ion_gps, src->ion_gps, sizeof(src->ion_gps));
+      memcpy(dst->ion_gal, src->ion_gal, sizeof(src->ion_gal));
+      memcpy(dst->ion_qzs, src->ion_qzs, sizeof(src->ion_qzs));
+      memcpy(dst->ion_cmp, src->ion_cmp, sizeof(src->ion_cmp));
+      memcpy(dst->ion_irn, src->ion_irn, sizeof(src->ion_irn));
+      memcpy(dst->ssr, src->ssr, sizeof(src->ssr));
+
+      for (int i = 0; i < src->n; i++) {
+        gnss_common::add_eph(dst, src->eph + i);
+      }
+      for (int i = 0; i < src->ng; i++) {
+        gnss_common::add_geph(dst, src->geph + i);
+      }
+    }
+
+    return cloned;
+  }
+
+  if (data_cluster->imu) {
+    std::shared_ptr<DataCluster> cloned =
+        std::make_shared<DataCluster>(FormatorType::IMUPack);
+    *cloned->imu = *data_cluster->imu;
+    return cloned;
+  }
+
+  if (data_cluster->image) {
+    std::shared_ptr<DataCluster> cloned = std::make_shared<DataCluster>(
+        FormatorType::ImagePack, data_cluster->image->width,
+        data_cluster->image->height, data_cluster->image->step);
+    cloned->image->time = data_cluster->image->time;
+    memcpy(cloned->image->image, data_cluster->image->image,
+           sizeof(uint8_t) * data_cluster->image->width *
+               data_cluster->image->height * data_cluster->image->step);
+    return cloned;
+  }
+
+  if (data_cluster->solution) {
+    return std::make_shared<DataCluster>(*data_cluster->solution);
+  }
+
+  return std::make_shared<DataCluster>();
+}
+
+void writeToMappedOutputs(
+    const std::shared_ptr<DataCluster>& data_cluster, double time_tag,
+    std::pair<std::multimap<size_t, size_t>::iterator,
+              std::multimap<size_t, size_t>::iterator> out_range,
+    std::vector<std::shared_ptr<rosbag::Bag>>& out_files,
+    std::vector<RosbagOption>& out_options,
+    std::vector<int>& out_sequences) {
+  for (auto it = out_range.first; it != out_range.second; ++it) {
+    rosbag::Bag& out_file = *out_files[it->second];
+    RosbagOption& out_option = out_options[it->second];
+    int& out_sequence = out_sequences[it->second];
+    writeRosbag(data_cluster, out_file, out_option, out_sequence, time_tag);
+  }
+}
+
+void writeBurstLoadGnssSupportMessages(
+    const std::vector<std::shared_ptr<DataCluster>>& gnss_non_observation_data,
+    double first_observation_time,
+    std::pair<std::multimap<size_t, size_t>::iterator,
+              std::multimap<size_t, size_t>::iterator> out_range,
+    std::vector<std::shared_ptr<rosbag::Bag>>& out_files,
+    std::vector<RosbagOption>& out_options,
+    std::vector<int>& out_sequences) {
+  if (gnss_non_observation_data.empty() || !std::isfinite(first_observation_time)) {
+    return;
+  }
+
+  const double preroll_time =
+      std::max(first_observation_time - kGnssMessagePrerollSec,
+               kGnssMessageSpacingSec);
+  double next_time = preroll_time;
+  for (size_t i = 0; i < gnss_non_observation_data.size(); i++) {
+    writeToMappedOutputs(gnss_non_observation_data[i],
+                         next_time,
+                         out_range, out_files, out_options, out_sequences);
+    next_time +=
+        estimateGnssMessageCount(gnss_non_observation_data[i]) *
+        kGnssMessageSpacingSec;
+  }
+}
+
+}  // namespace
 
 // Write DataCluster to rosbag
 void writeRosbag(const std::shared_ptr<DataCluster> data_cluster,
-  rosbag::Bag& bag, RosbagOption& option, int sequence, double time_tag)
+  rosbag::Bag& bag, RosbagOption& option, int& sequence, double time_tag)
 {
+  if (time_tag <= 0.0) return;
+
   if (option.format == "image") 
   {
     CHECK(data_cluster->image);
@@ -54,7 +225,7 @@ void writeRosbag(const std::shared_ptr<DataCluster> data_cluster,
     sensor_msgs::ImagePtr img_msg = 
       cv_bridge::CvImage(std_msgs::Header(), sensor_msgs::
       image_encodings::MONO8, image_mat).toImageMsg();
-    img_msg->header.seq = sequence;
+    img_msg->header.seq = sequence++;
     img_msg->header.stamp = ros::Time(img.time);
     bag.write(option.topic_name, ros::Time(time_tag), *img_msg);
   }
@@ -63,7 +234,7 @@ void writeRosbag(const std::shared_ptr<DataCluster> data_cluster,
     CHECK(data_cluster->imu);
     auto& imu = *data_cluster->imu;
     sensor_msgs::Imu msg;
-    msg.header.seq = sequence;
+    msg.header.seq = sequence++;
     msg.header.stamp = ros::Time(imu.time);
     msg.angular_velocity.x = imu.angular_velocity[0];
     msg.angular_velocity.y = imu.angular_velocity[1];
@@ -103,91 +274,116 @@ void writeRosbag(const std::shared_ptr<DataCluster> data_cluster,
         }
         msg.observations.push_back(o);
       }
+      msg.header.seq = sequence++;
       msg.header.stamp = ros::Time(time_tag);
       std::string topic_name = option.topic_name + "/observations";
       bag.write(topic_name, ros::Time(time_tag), msg);
     }
     if (option.enable_ephemeris && HAS(GnssDataType::Ephemeris))
     {
-      gici_ros::GnssEphemerides msg;
       nav_t *nav = gnss.ephemeris;
-      for (int i = 0; i < MAXSAT; i++) {
-        if (nav->eph == nullptr) continue;
-        eph_t *eph = nav->eph + i;
-        if (eph->sat == 0) continue;
-        gici_ros::GnssEphemeris e;
-        char prn_buf[5];
-        satno2id(eph->sat, prn_buf);
-        e.prn = prn_buf;
-        e.week = eph->week;
-        if (e.prn[0] == 'C') {
-          e.toes = time2bdt(gpst2bdt(eph->toe), NULL);
-          e.toc = time2bdt(gpst2bdt(eph->toc), NULL);
-        }
-        else {
-          e.toes = time2gpst(eph->toe, NULL);
-          e.toc = time2gpst(eph->toc, NULL);
-        }
-        e.A = eph->A;
-        e.sva = eph->sva;
-        e.code = eph->code;
-        e.idot = eph->idot;
-        e.iode = eph->iode;
-        e.f2 = eph->f2;
-        e.f1 = eph->f1;
-        e.f0 = eph->f0;
-        e.iodc = eph->iodc;
-        e.crs = eph->crs;
-        e.deln = eph->deln;
-        e.M0 = eph->M0;
-        e.cuc = eph->cuc;
-        e.e = eph->e;
-        e.cus = eph->cus;
-        e.toes = eph->toes;
-        e.cic = eph->cic;
-        e.OMG0 = eph->OMG0;
-        e.cis = eph->cis;
-        e.i0 = eph->i0;
-        e.crc = eph->crc;
-        e.omg = eph->omg;
-        e.OMGd = eph->OMGd;
-        for (int j = 0; j < 6; j++) {
-          if (eph->tgd[j] != 0.0) {
-            e.tgd.push_back(eph->tgd[j]);
-          }
-        }
-        e.svh = eph->svh;
-        msg.ephemerides.push_back(e);
-      }
-      for (int i = 0; i < MAXPRNGLO; i++) {
-        if (nav->geph == nullptr) continue;
-        geph_t *geph = nav->geph + i;
-        if (geph->sat == 0) continue;
-        gici_ros::GlonassEphemeris e;
-        char prn_buf[5];
-        satno2id(geph->sat, prn_buf);
-        e.prn = prn_buf;
-        e.svh = geph->svh;
-        e.iode = geph->iode;
-        int week = 0;
-        e.tof = time2gpst(geph->tof, &week);
-        e.toe = time2gpst(geph->toe, &week);
-        e.week = week;
-        e.frq = geph->frq;
-        for (int j = 0; j < 3; j++) {
-          e.vel.push_back(geph->vel[j]);
-          e.pos.push_back(geph->pos[j]);
-          e.acc.push_back(geph->acc[j]);
-        }
-        e.gamn = geph->gamn;
-        e.taun = geph->taun;
-        e.dtaun = geph->dtaun;
-        e.age = geph->age;
-        msg.glonass_ephemerides.push_back(e);
-      }
-      msg.header.stamp = ros::Time(time_tag);
       std::string topic_name = option.topic_name + "/ephemerides";
-      bag.write(topic_name, ros::Time(time_tag), msg);
+      size_t emitted_records = 0;
+      auto build_ephemeris_message = [&option]() {
+        gici_ros::GnssEphemerides msg;
+        for (const eph_t& eph : option.cumulative_ephemerides) {
+          gici_ros::GnssEphemeris e;
+          char prn_buf[5];
+          satno2id(eph.sat, prn_buf);
+          e.prn = prn_buf;
+          e.week = eph.week;
+          if (e.prn[0] == 'C') {
+            e.toes = time2bdt(gpst2bdt(eph.toe), NULL);
+            e.toc = time2bdt(gpst2bdt(eph.toc), NULL);
+          }
+          else {
+            e.toes = time2gpst(eph.toe, NULL);
+            e.toc = time2gpst(eph.toc, NULL);
+          }
+          e.A = eph.A;
+          e.sva = eph.sva;
+          e.code = eph.code;
+          e.idot = eph.idot;
+          e.iode = eph.iode;
+          e.f2 = eph.f2;
+          e.f1 = eph.f1;
+          e.f0 = eph.f0;
+          e.iodc = eph.iodc;
+          e.crs = eph.crs;
+          e.deln = eph.deln;
+          e.M0 = eph.M0;
+          e.cuc = eph.cuc;
+          e.e = eph.e;
+          e.cus = eph.cus;
+          e.toes = eph.toes;
+          e.cic = eph.cic;
+          e.OMG0 = eph.OMG0;
+          e.cis = eph.cis;
+          e.i0 = eph.i0;
+          e.crc = eph.crc;
+          e.omg = eph.omg;
+          e.OMGd = eph.OMGd;
+          for (int j = 0; j < 6; j++) {
+            if (eph.tgd[j] != 0.0) {
+              e.tgd.push_back(eph.tgd[j]);
+            }
+          }
+          e.svh = eph.svh;
+          msg.ephemerides.push_back(e);
+        }
+        for (const geph_t& geph : option.cumulative_glonass_ephemerides) {
+          gici_ros::GlonassEphemeris e;
+          char prn_buf[5];
+          satno2id(geph.sat, prn_buf);
+          e.prn = prn_buf;
+          e.svh = geph.svh;
+          e.iode = geph.iode;
+          int week = 0;
+          e.tof = time2gpst(geph.tof, &week);
+          e.toe = time2gpst(geph.toe, &week);
+          e.week = week;
+          e.frq = geph.frq;
+          for (int j = 0; j < 3; j++) {
+            e.vel.push_back(geph.vel[j]);
+            e.pos.push_back(geph.pos[j]);
+            e.acc.push_back(geph.acc[j]);
+          }
+          e.gamn = geph.gamn;
+          e.taun = geph.taun;
+          e.dtaun = geph.dtaun;
+          e.age = geph.age;
+          msg.glonass_ephemerides.push_back(e);
+        }
+        return msg;
+      };
+
+      auto write_cumulative_message = [&](const gtime_t& stamp_time) {
+        gici_ros::GnssEphemerides msg = build_ephemeris_message();
+        msg.header.seq = sequence++;
+        msg.header.stamp =
+            ros::Time(gnss_common::gtimeToDouble(gpst2utc(stamp_time)));
+        bag.write(topic_name,
+                  ros::Time(time_tag + emitted_records * kGnssMessageSpacingSec),
+                  msg);
+        emitted_records++;
+      };
+
+      if (nav->eph != nullptr) {
+        for (int i = 0; i < nav->n; i++) {
+          const eph_t& eph = nav->eph[i];
+          if (eph.sat == 0) continue;
+          option.cumulative_ephemerides.push_back(eph);
+          write_cumulative_message(eph.ttr.time ? eph.ttr : eph.toe);
+        }
+      }
+      if (nav->geph != nullptr) {
+        for (int i = 0; i < nav->ng; i++) {
+          const geph_t& geph = nav->geph[i];
+          if (geph.sat == 0) continue;
+          option.cumulative_glonass_ephemerides.push_back(geph);
+          write_cumulative_message(geph.tof.time ? geph.tof : geph.toe);
+        }
+      }
     }
     if (option.enable_antenna_position && HAS(GnssDataType::AntePos))
     {
@@ -195,6 +391,7 @@ void writeRosbag(const std::shared_ptr<DataCluster> data_cluster,
       for (size_t i = 0; i < 3; i++) {
         msg.pos.push_back(gnss.antenna->pos[i]);
       }
+      msg.header.seq = sequence++;
       msg.header.stamp = ros::Time(time_tag);
       std::string topic_name = option.topic_name + "/antenna_position";
       bag.write(topic_name, ros::Time(time_tag), msg);
@@ -207,6 +404,7 @@ void writeRosbag(const std::shared_ptr<DataCluster> data_cluster,
       for (int i = 0; i < 8; i++) {
         msg.parameters.push_back(gnss.ephemeris->ion_gps[i]);
       }
+      msg.header.seq = sequence++;
       msg.header.stamp = ros::Time(time_tag);
       std::string topic_name = option.topic_name + "/ionosphere_parameter";
       bag.write(topic_name, ros::Time(time_tag), msg);
@@ -236,6 +434,7 @@ void writeRosbag(const std::shared_ptr<DataCluster> data_cluster,
         msg.biases.push_back(b);
       }
       if (msg.biases.size() == 0) return;
+      msg.header.seq = sequence++;
       msg.header.stamp = ros::Time(time_tag);
       std::string topic_name = option.topic_name + "/code_bias";
       bag.write(topic_name, ros::Time(time_tag), msg);
@@ -266,6 +465,7 @@ void writeRosbag(const std::shared_ptr<DataCluster> data_cluster,
         msg.biases.push_back(b);
       }
       if (msg.biases.size() == 0) return;
+      msg.header.seq = sequence++;
       msg.header.stamp = ros::Time(time_tag);
       std::string topic_name = option.topic_name + "/phase_bias";
       bag.write(topic_name, ros::Time(time_tag), msg);
@@ -296,6 +496,7 @@ void writeRosbag(const std::shared_ptr<DataCluster> data_cluster,
         msg.corrections.push_back(c);
       }
       if (msg.corrections.size() == 0) return;
+      msg.header.seq = sequence++;
       msg.header.stamp = ros::Time(time_tag);
       std::string topic_name = option.topic_name + "/ephemerides_correction";
       bag.write(topic_name, ros::Time(time_tag), msg);
@@ -345,12 +546,11 @@ int main(int argc, char** argv)
   }
 
   // Initialize files
-  std::vector<file_t *> in_files;
-  std::vector<std::shared_ptr<FormatorBase>> in_formators;
+  std::vector<InputSource> in_sources;
   std::vector<std::shared_ptr<rosbag::Bag>> out_files;
   std::vector<int> out_sequences;
   std::vector<RosbagOption> out_options;
-  std::map<size_t, size_t> in_to_out_map;
+  std::multimap<size_t, size_t> in_to_out_map;
   // initialize input files
   for (size_t i = 0; i < nodes->streamers.size(); i++) {
     const auto& node = nodes->streamers[i];
@@ -358,27 +558,45 @@ int main(int argc, char** argv)
     std::string type_str = streamer_node["type"].as<std::string>();
     StreamerType type;
     option_tools::convert(type_str, type);
-    CHECK(type == StreamerType::File);
-    FileStreamer::Option option;
-    option_tools::safeGet(streamer_node, "path", &option.path);
-    // open input file
-    in_files.push_back(openfile(option.path.data(), FILE_MODE_INPUT));
-    // initialize formator
-    std::vector<std::string> formator_tags;
-    const std::vector<std::string>& output_tags = node->output_tags;
-    for (const auto& tag : output_tags) {
-      if (tag.substr(0, 4) == "fmt_") formator_tags.push_back(tag);
+    InputSource source;
+    source.type = type;
+    source.tag = node->tag;
+
+    std::vector<std::string> source_tags;
+    if (!source.tag.empty()) source_tags.push_back(source.tag);
+
+    if (type == StreamerType::File) {
+      FileStreamer::Option option;
+      option_tools::safeGet(streamer_node, "path", &option.path);
+      source.file = openfile(option.path.data(), FILE_MODE_INPUT);
+      std::vector<std::string> formator_tags;
+      const std::vector<std::string>& output_tags = node->output_tags;
+      for (const auto& tag : output_tags) {
+        if (tag.substr(0, 4) == "fmt_") formator_tags.push_back(tag);
+      }
+      CHECK(formator_tags.size() == 1);
+      source_tags.insert(source_tags.end(), formator_tags.begin(), formator_tags.end());
+      NodeOptionHandle::FormatorNodeBasePtr formator_node = 
+        std::static_pointer_cast<NodeOptionHandle::FormatorNodeBase>
+        (nodes->tag_to_node.at(formator_tags[0]));
+      source.formator = makeFormator(formator_node->this_node);
     }
-    CHECK(formator_tags.size() == 1);
-    NodeOptionHandle::FormatorNodeBasePtr formator_node = 
-      std::static_pointer_cast<NodeOptionHandle::FormatorNodeBase>
-      (nodes->tag_to_node.at(formator_tags[0]));
-    in_formators.push_back(makeFormator(formator_node->this_node));
+    else if (type == StreamerType::PostFile) {
+      source.reader = makeFileReader(streamer_node);
+      CHECK(source.reader != nullptr);
+    }
+    else {
+      LOG(FATAL) << "Unsupported streamer type for rosbag conversion: "
+                 << type_str;
+    }
+
+    in_sources.push_back(source);
     // find options
     for (size_t j = 0; j < rosbags.size(); j++) {
       for (auto input_tag : rosbags[j]->input_tags) {
-        if (input_tag == formator_tags[0]) {
-          in_to_out_map.insert(std::make_pair(i, j));
+        if (std::find(source_tags.begin(), source_tags.end(), input_tag) !=
+            source_tags.end()) {
+          in_to_out_map.insert(std::make_pair(in_sources.size() - 1, j));
         }
       }
     }
@@ -412,52 +630,105 @@ int main(int argc, char** argv)
     out_sequences.push_back(0);
   }
 
-  // Read and write files
-  for (size_t i = 0; i < in_files.size(); i++) {
-    file_t *in_file = in_files[i];
-    std::shared_ptr<FormatorBase> in_formator = in_formators[i];
-    if (in_to_out_map.find(i) == in_to_out_map.end()) continue;
-    std::cout << "Converting " << nodes->streamers[i]->tag << "..." << std::endl;
-    size_t out_index = in_to_out_map.at(i);
-    rosbag::Bag& out_file = *out_files[out_index];
-    RosbagOption& out_option = out_options[out_index];
-    int& out_sequence = out_sequences[out_index];
-    uint8_t *buf;
-    int buffer_length;
-    if (!option_tools::safeGet(
-      nodes->streamers[i]->this_node, "buffer_length", &buffer_length)) {
-      LOG(INFO) << nodes->streamers[i]->tag 
-        << ": Unable to load buffer length! Using default instead.";
-      buffer_length = 32768;
-    }
-    buf = (uint8_t *)malloc(sizeof(uint8_t) * buffer_length);
+  // Preload post-file data so that we can schedule non-observation GNSS
+  // messages ahead of the first observation and refresh them periodically.
+  std::vector<std::vector<FileReaderBase::DataClusterPair>> post_file_data(
+      in_sources.size());
+  double first_observation_time = INFINITY;
+  for (size_t i = 0; i < in_sources.size(); i++) {
+    InputSource& source = in_sources[i];
+    if (source.type != StreamerType::PostFile) continue;
 
-    std::vector<std::shared_ptr<DataCluster>> dataset;
-    uint32_t fpos_4B;
-    uint64_t fpos_8B;
-    double in_file_start_time = gnss_common::gtimeToDouble(gpst2utc(in_file->time));
-    while (fread(&in_file->tick_n, sizeof(uint32_t), 1, in_file->fp_tag) && 
-          fread((in_file->size_fpos==4)?(void *)&fpos_4B:(void *)&fpos_8B, 
-          in_file->size_fpos, 1, in_file->fp_tag)) 
-    {
-      in_file->fpos_n = (long)((in_file->size_fpos==4)?fpos_4B:fpos_8B);
-      int n_read = in_file->fpos_n - ftell(in_file->fp);
-      if (n_read > buffer_length) {
-        std::cerr << "WARN: Max buffer length exceeded!" << std::endl;
-        n_read = buffer_length;
-      }
-      int n = (int)fread(buf, 1, n_read, in_file->fp);
-      int nobs = in_formator->decode(buf, n, dataset);
-      for (int k = 0; k < nobs; k++) {
-        double time_tag = in_file_start_time + (double)in_file->tick_n * 1.0e-3;
-        writeRosbag(dataset[k], out_file, out_option, ++out_sequence, time_tag);
-      }
+    FileReaderBase::DataClusterPair data;
+    while (source.reader->get(data, INFINITY)) {
+      post_file_data[i].push_back(
+          std::make_pair(data.first, cloneDataCluster(data.second)));
+      if (!isObservationCluster(data.second) || data.first <= 0.0) continue;
+      first_observation_time = std::min(first_observation_time, data.first);
     }
-
-    free(buf);
   }
 
-  for (size_t i = 0; i < in_files.size(); i++) closefile(in_files[i]);
+  // Read and write files
+  for (size_t i = 0; i < in_sources.size(); i++) {
+    InputSource& source = in_sources[i];
+    std::cout << "Converting " << source.tag << "..." << std::endl;
+    auto out_range = in_to_out_map.equal_range(i);
+    if (out_range.first == out_range.second) continue;
+    if (source.type == StreamerType::File) {
+      file_t *in_file = source.file;
+      std::shared_ptr<FormatorBase> in_formator = source.formator;
+      uint8_t *buf;
+      int buffer_length;
+      if (!option_tools::safeGet(
+        nodes->streamers[i]->this_node, "buffer_length", &buffer_length)) {
+        LOG(INFO) << source.tag
+          << ": Unable to load buffer length! Using default instead.";
+        buffer_length = 32768;
+      }
+      buf = (uint8_t *)malloc(sizeof(uint8_t) * buffer_length);
+
+      std::vector<std::shared_ptr<DataCluster>> dataset;
+      uint32_t fpos_4B;
+      uint64_t fpos_8B;
+      double in_file_start_time = gnss_common::gtimeToDouble(gpst2utc(in_file->time));
+      while (fread(&in_file->tick_n, sizeof(uint32_t), 1, in_file->fp_tag) &&
+            fread((in_file->size_fpos==4)?(void *)&fpos_4B:(void *)&fpos_8B,
+            in_file->size_fpos, 1, in_file->fp_tag))
+      {
+        in_file->fpos_n = (long)((in_file->size_fpos==4)?fpos_4B:fpos_8B);
+        int n_read = in_file->fpos_n - ftell(in_file->fp);
+        if (n_read > buffer_length) {
+          std::cerr << "WARN: Max buffer length exceeded!" << std::endl;
+          n_read = buffer_length;
+        }
+        int n = (int)fread(buf, 1, n_read, in_file->fp);
+        int nobs = in_formator->decode(buf, n, dataset);
+        for (int k = 0; k < nobs; k++) {
+          double time_tag = in_file_start_time + (double)in_file->tick_n * 1.0e-3;
+          for (auto it = out_range.first; it != out_range.second; ++it) {
+            rosbag::Bag& out_file = *out_files[it->second];
+            RosbagOption& out_option = out_options[it->second];
+            int& out_sequence = out_sequences[it->second];
+            writeRosbag(dataset[k], out_file, out_option, out_sequence, time_tag);
+          }
+        }
+      }
+
+      free(buf);
+    }
+    else if (source.type == StreamerType::PostFile) {
+      const auto& dataset = post_file_data[i];
+      std::vector<std::shared_ptr<DataCluster>> burst_load_gnss_support_data;
+      for (const auto& data : dataset) {
+        if (data.first == 0.0 && isGnssNonObservationCluster(data.second)) {
+          burst_load_gnss_support_data.push_back(data.second);
+        }
+      }
+
+      bool schedule_non_observation =
+          !burst_load_gnss_support_data.empty() &&
+          std::isfinite(first_observation_time);
+      if (schedule_non_observation) {
+        writeBurstLoadGnssSupportMessages(
+            burst_load_gnss_support_data, first_observation_time,
+            out_range, out_files, out_options,
+            out_sequences);
+      }
+
+      for (const auto& data : dataset) {
+        if (schedule_non_observation && data.first == 0.0 &&
+            isGnssNonObservationCluster(data.second)) {
+          continue;
+        }
+        writeToMappedOutputs(data.second, data.first, out_range, out_files,
+                             out_options, out_sequences);
+      }
+    }
+  }
+
+  for (size_t i = 0; i < in_sources.size(); i++) {
+    if (in_sources[i].file) closefile(in_sources[i].file);
+  }
   for (size_t i = 0; i < out_files.size(); i++) out_files[i]->close();
 
   return 0;
