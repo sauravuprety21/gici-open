@@ -664,25 +664,32 @@ void MultiSensorEstimating::handleNonTimePropagationSensors(EstimatorDataCluster
     if (!needTimeAlign(type_)) {
       measurement_align_buffer_.push_back(data);
     }
+    // Right boundary check
     else if (measurement_align_buffer_.size() == 0 || 
         data.timestamp >= measurement_align_buffer_.back().timestamp) {
-      measurement_align_buffer_.push_back(data);
+      measurement_align_buffer_.push_back(data); // push_back new data (right append)
     }
+    // Left boundary check
     else if (data.timestamp <= measurement_align_buffer_.front().timestamp) {
       if (data.timestamp < measurement_align_buffer_.back().timestamp - buffer_time) {
         LOG(WARNING) << "Throughing data at timestamp " << std::fixed << data.timestamp 
           << " because its latency is too large!";
+        // discard stale data
       }
       else {
         measurement_align_buffer_.push_front(data);
+        // push_front old but not stale data (left append)
       }
     }
-    else
-    for (auto it = measurement_align_buffer_.begin(); 
-          it != measurement_align_buffer_.end(); it++) {
-      if (data.timestamp >= it->timestamp) continue;
-      measurement_align_buffer_.insert(it, data);
-      break;
+    // Inside the interval check
+    else { // make scope explicit
+      for (auto it = measurement_align_buffer_.begin();
+           it != measurement_align_buffer_.end(); it++) {
+        if (data.timestamp >= it->timestamp)
+          continue;
+        measurement_align_buffer_.insert(it, data);
+        break;
+      }
     }
   }
   // Non-align mode
@@ -767,11 +774,11 @@ void MultiSensorEstimating::putMeasurements()
     handleFrontendSensors(data);
   }
   // GNSS reference station data (no need to align time)
-  else if (data.gnss && data.gnss_role == GnssRole::Reference) {
-    mutex_input_.lock();
-    measurements_.push_back(data);
-    mutex_input_.unlock();
-  }
+  // else if (data.gnss && data.gnss_role == GnssRole::Reference) {
+  //   mutex_input_.lock();
+  //   measurements_.push_back(data);
+  //   mutex_input_.unlock();
+  // }
   // other sensors
   else {
     handleNonTimePropagationSensors(data);

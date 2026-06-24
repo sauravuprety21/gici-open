@@ -125,11 +125,12 @@ private:
 
   // Check if there are more than one non-time-propagation sensors
   inline bool needTimeAlign(EstimatorType estimator_type) {
-    return (estimator_type == EstimatorType::Rtk ||
-            estimator_type == EstimatorType::GnssImuCameraSrr || 
+    return (estimator_type == EstimatorType::Dgnss ||
+            estimator_type == EstimatorType::Rtk ||
+            estimator_type == EstimatorType::GnssImuCameraSrr ||
             estimator_type == EstimatorType::SppImuCameraRrr ||
             estimator_type == EstimatorType::DgnssImuCameraRrr ||
-            estimator_type == EstimatorType::RtkImuCameraRrr || 
+            estimator_type == EstimatorType::RtkImuCameraRrr ||
             estimator_type == EstimatorType::PppImuCameraRrr);
   }
 
