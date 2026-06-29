@@ -183,7 +183,8 @@ protected:
   std::unique_ptr<SppEstimator> spp_estimator_;
 
   // Data buffers
-  std::deque<EstimatorDataCluster> measurements_;  // non propagate measurements
+  std::multimap<double, EstimatorDataCluster>
+      measurements_; // non propagate measurements
   int last_backend_pending_num_ = 0;
   // the frontend measurements should be processd by frontend, and the output of frontend will 
   // be inserted into measurements_.

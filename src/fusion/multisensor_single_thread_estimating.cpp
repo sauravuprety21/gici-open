@@ -8,6 +8,9 @@
 **/
 #include "gici/fusion/multisensor_single_thread_estimating.h"
 
+#include <iomanip>
+#include <sstream>
+
 #include "gici/imu/imu_common.h"
 #include "gici/imu/imu_error.h"
 #include "gici/utility/spin_control.h"
@@ -506,21 +509,35 @@ void MultiSensorSingleThreadEstimating::estimatorDataCallback(EstimatorDataClust
     handleNonTimePropagationSensors(data);
   }
 
-  // Block input
-  bool can_proceed = false;
-  while (!can_proceed) {
-    mutex_.lock();
-    can_proceed = measurements_.size() == 0 ||  
-      measurements_.rbegin()->first - measurements_.begin()->first < input_align_latency_;
-    mutex_.unlock();
-    if (can_proceed) break;
-    std::this_thread::sleep_for(std::chrono::microseconds(1));
+  if (ready_time_aligned_inputs_.load()) {
+    // Block input - until all measurements have been consumed
+    // std::ostringstream gnss_stream;
+    // gnss_stream << std::setprecision(17);
+    // gnss_stream << "Time aligned inputs ready " 
+    //             << " first " << measurements_.begin()->first << " first_role"
+    //             << measurements_.begin()->second.gnss->tag
+    //             << " last " << measurements_.rbegin()->first << " last_role"
+    //             << measurements_.rbegin()->second.gnss->tag;
+    // DLOG(INFO) << gnss_stream.str();
+    bool can_proceed = false;
+    while (!can_proceed) {
+      mutex_.lock();
+      can_proceed =
+          measurements_.size() == 0;
+      mutex_.unlock();
+      if (can_proceed)
+        break;
+      std::this_thread::sleep_for(std::chrono::microseconds(1));
+    }
+    ready_time_aligned_inputs_.store(false);
   }
 }
 
 // Process funtion in every loop
 void MultiSensorSingleThreadEstimating::process()
 {
+  if(!ready_time_aligned_inputs_.load())
+    return;
   // Check if we have data to process
   mutex_.lock();
   if (measurements_.size() == 0) {
@@ -610,9 +627,91 @@ void MultiSensorSingleThreadEstimating::handleTimePropagationSensors(EstimatorDa
 // Handle non-time-propagation sensors
 void MultiSensorSingleThreadEstimating::handleNonTimePropagationSensors(EstimatorDataCluster& data)
 {
+  const double buffer_time = 2.0 * input_align_latency_;
+  if (!needTimeAlign(type_)) {
+    measurement_align_buffer_.push_back(data);
+  }
+  // Right boundary check
+  else if (measurement_align_buffer_.size() == 0 ||
+           data.timestamp >= measurement_align_buffer_.back().timestamp) {
+    measurement_align_buffer_.push_back(
+        data); // push_back new data (right append)
+  }
+  // Left boundary check
+  else if (data.timestamp <= measurement_align_buffer_.front().timestamp) {
+    if (data.timestamp <
+        measurement_align_buffer_.back().timestamp - buffer_time) {
+      LOG(WARNING) << "Throughing data at timestamp " << std::fixed
+                   << data.timestamp << " because its latency is too large!";
+      // discard stale data
+    } else {
+      measurement_align_buffer_.push_front(data);
+      // push_front old but not stale data (left append)
+    }
+  }
+  // Inside the interval check
+  else { // make scope explicit
+    for (auto it = measurement_align_buffer_.begin();
+         it != measurement_align_buffer_.end(); it++) {
+      if (data.timestamp >= it->timestamp)
+        continue;
+      measurement_align_buffer_.insert(it, data);
+      break;
+    }
+  }
+
+  bool has_aligned = false;
+  // Check if we can add to measurement buffer
+  for (auto it = measurement_align_buffer_.begin();
+       it != measurement_align_buffer_.end();) {
+    // we delay the data for input_align_latency_ to wait incoming data for
+    // realigning.
+    if (measurement_align_buffer_.back().timestamp -
+            measurement_align_buffer_.front().timestamp <
+        input_align_latency_)
+      break;
+    // we always add IMU measurement to estimator at a given timestamp before we
+    // add other sensor measurements.
+    EstimatorDataCluster &measurement = *it;
+    if (estimatorTypeContains(SensorType::IMU, type_) &&
+        measurement.timestamp > latest_imu_timestamp_) {
+      it++;
+      continue;
+    }
+
+    mutex_.lock();
+    // For equal-timestamp GNSS data, keep reference before rover.
+    if (measurement.gnss && measurement.gnss_role == GnssRole::Reference) {
+      auto insert_hint = measurements_.lower_bound(measurement.timestamp);
+      measurements_.insert(insert_hint,
+                           std::make_pair(measurement.timestamp, measurement));
+    }
+    else if (measurement.gnss && measurement.gnss_role == GnssRole::Rover) {
+      auto range = measurements_.equal_range(measurement.timestamp);
+      auto insert_hint = range.second;
+      for (auto jt = range.first; jt != range.second; ++jt) {
+        if (jt->second.gnss && jt->second.gnss_role == GnssRole::Rover) {
+          insert_hint = jt;
+          break;
+        }
+      }
+      measurements_.insert(insert_hint,
+                           std::make_pair(measurement.timestamp, measurement));
+    }
+    else {
+      measurements_.insert(std::make_pair(measurement.timestamp, measurement));
+    }
+
+    mutex_.unlock();
+    it = measurement_align_buffer_.erase(it);
+  }
+
   mutex_.lock();
-  measurements_.insert(std::make_pair(data.timestamp, data));
+  if(measurements_.size() > 0 )
+    has_aligned = measurements_.rbegin()->first - measurements_.begin()->first >=
+                  input_align_latency_;
   mutex_.unlock();
+  ready_time_aligned_inputs_.store(has_aligned);
 }
 
 // Process estimator
@@ -674,6 +773,18 @@ bool MultiSensorSingleThreadEstimating::processEstimator(const EstimatorDataClus
 
   // Process estimator
   bool is_updated = false;
+
+  // if (measurement.gnss) {
+  //   std::ostringstream gnss_stream;
+  //   gnss_stream << std::setprecision(17);
+  //   gnss_stream << "SingleThread GNSS input: t=" << measurement.timestamp
+  //               << " gnss_t=" << measurement.gnss->timestamp
+  //               << " role=" << static_cast<int>(measurement.gnss_role)
+  //               << " tag=" << measurement.tag
+  //               << " gnss_tag=" << measurement.gnss->tag
+  //               << " sats=" << measurement.gnss->satellites.size();
+  //   DLOG(INFO) << gnss_stream.str();
+  // }
 
   // add measurement
   if (estimator_->addMeasurement(measurement)) {

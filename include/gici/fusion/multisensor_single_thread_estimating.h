@@ -14,6 +14,7 @@
 #include <vector>
 #include <functional>
 #include <glog/logging.h>
+#include <atomic>
 
 #include "gici/estimate/estimating.h"
 #include "gici/utility/spin_control.h"
@@ -109,6 +110,17 @@ private:
     else return false;
   }
 
+  // Check if there are more than one non-time-propagation sensors
+  inline bool needTimeAlign(EstimatorType estimator_type) {
+    return (estimator_type == EstimatorType::Dgnss ||
+            estimator_type == EstimatorType::Rtk ||
+            estimator_type == EstimatorType::GnssImuCameraSrr ||
+            estimator_type == EstimatorType::SppImuCameraRrr ||
+            estimator_type == EstimatorType::DgnssImuCameraRrr ||
+            estimator_type == EstimatorType::RtkImuCameraRrr ||
+            estimator_type == EstimatorType::PppImuCameraRrr);
+  }
+
   // Check legality of estimator data
   inline bool estimatorDataIllegal(const EstimatorDataCluster& data) {
     int num_data_type = 0;
@@ -150,9 +162,14 @@ protected:
 
   // Data buffers
   std::multimap<double, EstimatorDataCluster> measurements_;  // non propagate measurements
+  // buffer to align timestamps of different sensor streams
+  std::deque<EstimatorDataCluster> measurement_align_buffer_;
+
   double latest_imu_timestamp_;
   // mutex to lock buffers and processes
   std::mutex mutex_;
+
+  std::atomic<bool> ready_time_aligned_inputs_{false};
 
   // Options
   EstimatorBaseOptions base_options_;

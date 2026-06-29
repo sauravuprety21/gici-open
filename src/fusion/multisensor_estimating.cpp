@@ -715,7 +715,25 @@ void MultiSensorEstimating::handleNonTimePropagationSensors(EstimatorDataCluster
     mutex_input_.lock();
 
     // add measurements
-    measurements_.push_back(measurement);
+    // For equal-timestamp GNSS data, keep reference before rover.
+    if (measurement.gnss && measurement.gnss_role == GnssRole::Reference) {
+      auto insert_hint = measurements_.lower_bound(measurement.timestamp);
+      measurements_.insert(insert_hint,
+                           std::make_pair(measurement.timestamp, measurement));
+    } else if (measurement.gnss && measurement.gnss_role == GnssRole::Rover) {
+      auto range = measurements_.equal_range(measurement.timestamp);
+      auto insert_hint = range.second;
+      for (auto jt = range.first; jt != range.second; ++jt) {
+        if (jt->second.gnss && jt->second.gnss_role == GnssRole::Rover) {
+          insert_hint = jt;
+          break;
+        }
+      }
+      measurements_.insert(insert_hint,
+                           std::make_pair(measurement.timestamp, measurement));
+    } else {
+      measurements_.insert(std::make_pair(measurement.timestamp, measurement));
+    }
 
     // check pending, sparcify if needed
     if (enable_backend_data_sparsify_)
@@ -729,10 +747,11 @@ void MultiSensorEstimating::handleNonTimePropagationSensors(EstimatorDataCluster
                     << pending_sparsify_num_ << ".";
         for (int i = 0; i < pending_sparsify_num_; i++) {
           // some measurements we cannot erase
-          if (measurements_.front().frame_bundle && 
-              measurements_.front().frame_bundle->isKeyframe()) break;
+          if (measurements_.rbegin()->second.frame_bundle && 
+              measurements_.rbegin()->second.frame_bundle->isKeyframe()) break;
           // erase front measurement
-          if (measurements_.size() > 1) measurements_.pop_front();
+          if (measurements_.size() > 1)
+            measurements_.erase(measurements_.begin());
         }
       }
     }
@@ -793,8 +812,8 @@ bool MultiSensorEstimating::processEstimator()
   if (measurements_.size() == 0) {
     mutex_input_.unlock(); return false;
   }
-  EstimatorDataCluster measurement = measurements_.front();
-  measurements_.pop_front();
+  EstimatorDataCluster measurement = measurements_.begin()->second;
+  measurements_.erase(measurements_.begin());
   mutex_input_.unlock();
 
   // Check pending
@@ -891,7 +910,7 @@ bool MultiSensorEstimating::processEstimator()
     }
     // check pendding
     if (measurements_.size() > 1) {
-      double pending_period = measurements_.back().timestamp - 
+      double pending_period = measurements_.begin()->first - 
                         solution_.timestamp;
       // add feedbacks here
     }

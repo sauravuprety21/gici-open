@@ -97,8 +97,7 @@ Now you can run GICI via
 
 ```
 cd <gici-root-directory>/ros_wrapper
-catkin_make -DCMAKE_BUILD_TYPE=Release
-source ./devel/setup.bash
+catkin_make -DCMAKE_BUILD_TYPE=Release && source ./devel/setup.bash
 ```
 
 Now you can run GICI ROS wrapper via 
