@@ -96,10 +96,19 @@ void FilesReading::run()
     load_timestamp += step_;  // shift desired timestamp
 
     // Check if all load done
-    quit_thread_ = true;
+    bool all_readers_done = true;
     for (size_t i = 0; i < tags_.size(); i++) {
       std::shared_ptr<FileReaderBase>& reader = file_readers_[i];
-      if (!reader->done()) quit_thread_ = false;
+      if (!reader->done()) {
+        all_readers_done = false;
+        break;
+      }
+    }
+
+    if (all_readers_done) {
+      LOG(INFO) << "All post-file inputs reached EOF. Requesting shutdown.";
+      SpinControl::requestShutdown();
+      break;
     }
   }
 }

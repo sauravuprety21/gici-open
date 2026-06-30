@@ -103,9 +103,22 @@ NodeHandle::NodeHandle(const NodeOptionHandlePtr& nodes)
 
 NodeHandle::~NodeHandle()
 {
+  shutdown();
+}
+
+void NodeHandle::shutdown()
+{
+  if (is_shutdown_) return;
+  is_shutdown_ = true;
+
   // Stop streamings
   for (size_t i = 0; i < streamings_.size(); i++) {
     streamings_[i]->stop();
+  }
+
+  // Stop file readers
+  if (files_reading_) {
+    files_reading_->stop();
   }
 
   // Stop estimators

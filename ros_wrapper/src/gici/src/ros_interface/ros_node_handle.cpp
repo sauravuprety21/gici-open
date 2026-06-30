@@ -8,6 +8,8 @@
 **/
 #include "gici/ros_interface/ros_node_handle.h"
 
+#include "gici/utility/spin_control.h"
+
 namespace gici {
 
 RosNodeHandle::RosNodeHandle(ros::NodeHandle& nh, const NodeOptionHandlePtr& nodes) :
@@ -39,6 +41,10 @@ RosNodeHandle::RosNodeHandle(ros::NodeHandle& nh, const NodeOptionHandlePtr& nod
     ros_streams_.push_back(stream);
   }
 
+  // Expose a shutdown service so bag orchestration can stop GICI explicitly.
+  shutdown_service_ = nh.advertiseService(
+    "shutdown", &RosNodeHandle::shutdownCallback, this);
+
   // Check if we have ROS streams
   if (ros_streams_.size() == 0) return;
 
@@ -61,6 +67,17 @@ RosNodeHandle::RosNodeHandle(ros::NodeHandle& nh, const NodeOptionHandlePtr& nod
 
 RosNodeHandle::~RosNodeHandle()
 {}
+
+bool RosNodeHandle::shutdownCallback(
+  std_srvs::Trigger::Request&,
+  std_srvs::Trigger::Response& response)
+{
+  LOG(INFO) << "Received ROS shutdown service request.";
+  SpinControl::requestShutdown();
+  response.success = true;
+  response.message = "Shutdown requested.";
+  return true;
+}
 
 // Bind streamer->formator->ROS-streamer pipelines
 void RosNodeHandle::bindStreamerToFormatorToRosStreamer(const NodeOptionHandlePtr& nodes)

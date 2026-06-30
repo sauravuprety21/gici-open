@@ -23,6 +23,9 @@ public:
   NodeHandle(const NodeOptionHandlePtr& nodes);
   ~NodeHandle();
 
+  // Stop worker threads explicitly before process teardown.
+  void shutdown();
+
   // Get estimating handles
   // Used for dataset stream input
   const std::vector<std::shared_ptr<EstimatingBase>>& 
@@ -63,6 +66,7 @@ protected:
   // The outter vector aligns to estimatings_, which describes the data destinations.
   // The inner vector aligns to the input nodes of corresponding estimator.
   std::vector<std::vector<std::shared_ptr<DataIntegrationBase>>> data_integrations_;
+  bool is_shutdown_ = false;
 };
 
 }

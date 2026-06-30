@@ -77,13 +77,17 @@ int main(int argc, char** argv)
     << "Running..." << std::endl;
 
   // Start running all threads
+  SpinControl::reset();
   SpinControl::run();
 
   // Loop
   SpinControl spin(1e-1);
-  while (SpinControl::ok()) {
+  while (SpinControl::ok() && !SpinControl::shutdownRequested()) {
     spin.sleep();
   }
+
+  node_handle->shutdown();
+  node_handle.release();
 
   return 0;
 }

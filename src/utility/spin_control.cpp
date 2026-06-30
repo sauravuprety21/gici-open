@@ -11,8 +11,9 @@
 namespace gici {
 
 // Static variable
-bool SpinControl::ok_ = true;
-bool SpinControl::wait_ = true;
+std::atomic<bool> SpinControl::ok_(true);
+std::atomic<bool> SpinControl::wait_(true);
+std::atomic<bool> SpinControl::shutdown_requested_(false);
 
 SpinControl::SpinControl(double duration) : duration_(duration)
 {

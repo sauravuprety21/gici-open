@@ -11,6 +11,7 @@ find_package(OpenCV 4 REQUIRED)
 find_package(catkin REQUIRED COMPONENTS
   roscpp 
   std_msgs
+  std_srvs
   nav_msgs
   sensor_msgs
   geometry_msgs
@@ -58,7 +59,7 @@ add_subdirectory(../../.. gici.out)
 catkin_package(
   INCLUDE_DIRS 
   CATKIN_DEPENDS roscpp std_msgs nav_msgs
-        sensor_msgs geometry_msgs 
+        sensor_msgs geometry_msgs std_srvs
         tf tf_conversions cv_bridge
         image_transport eigen_conversions
         message_generation

@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <functional>
 #include <glog/logging.h>
+#include <std_srvs/Trigger.h>
 
 #include "gici/stream/node_handle.h"
 #include "gici/ros_interface/ros_stream.h"
@@ -46,8 +47,14 @@ protected:
     return nullptr;
   }
 
+  // Request a clean shutdown through ROS.
+  bool shutdownCallback(
+    std_srvs::Trigger::Request& request,
+    std_srvs::Trigger::Response& response);
+
 protected:
   std::vector<std::shared_ptr<RosStream>> ros_streams_;
+  ros::ServiceServer shutdown_service_;
 };
 
 }

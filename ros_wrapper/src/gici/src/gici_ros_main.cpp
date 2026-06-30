@@ -83,10 +83,24 @@ int main(int argc, char** argv)
     << "Running..." << std::endl;
   
   // Start running all threads
+  SpinControl::reset();
   SpinControl::run();
   
-  // Loop
-  ros::spin();
+  // Keep ROS callbacks alive while still honoring GICI shutdown events.
+  ros::AsyncSpinner spinner(1);
+  spinner.start();
+
+  SpinControl spin(1e-1);
+  while (SpinControl::ok() && !SpinControl::shutdownRequested() && ros::ok()) {
+    spin.sleep();
+  }
+
+  if (ros::ok()) {
+    ros::shutdown();
+  }
+
+  node_handle->shutdown();
+  node_handle.release();
 
   return 0;
 }
